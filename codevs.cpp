@@ -84,7 +84,8 @@ int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
 Unit* unitList[MAX_UNIT_ID];  // ユニットのリスト
 
-char field[HEIGHT][WIDTH];    // ゲームフィールド
+char field[HEIGHT][WIDTH];        // ゲームフィールド
+map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
 
 class Codevs{
@@ -123,9 +124,10 @@ class Codevs{
     }
 
     /*
-     * ステージの初期化
+     * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
+      unitIdCheckList.clear();
     }
 
     /*
@@ -139,8 +141,6 @@ class Codevs{
       int unitType; // ユニットの種類
       string str;   // 終端文字列「END」を格納するだけの変数
 
-      // 残り時間(ms)
-      scanf("%d", &remainingTime);
 
       // 現在のステージ数(0-index)
       scanf("%d", &stageNumber);
@@ -184,6 +184,22 @@ class Codevs{
 
     void run(){
       init();
+
+      // 残り時間(ms)が取得出来なくなるまで回し続ける
+      while(cin >> remainingTime){
+        fprintf(stderr, "Remaing time is %dms\n", remainingTime);
+
+        eachTurnProc();
+
+        finalInstruction();
+      }
+    }
+
+    /*
+     * 最終指示(このターンの最終的な行動を出力)
+     */
+    void finalInstruction(){
+      printf("0\n");
     }
 
     /*
@@ -242,14 +258,45 @@ class CodevsTest{
   public:
   void testRun(){
     fprintf(stderr, "TestCase1: %s\n", testCase1()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase2: %s\n", testCase2()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase3: %s\n", testCase3()? "SUCCESS!" : "FAILED!");
   }
 
+  /*
+   * マンハッタン距離が取得出来ているかどうかの確認
+   */
   bool testCase1(){
     if(cv.calcDist(0,0,1,1) != 2) return false;
     if(cv.calcDist(0,0,0,0) != 0) return false;
     if(cv.calcDist(99,99,99,99) != 0) return false;
     if(cv.calcDist(0,99,99,0) != 198) return false;
     if(cv.calcDist(3,20,9,19) != 7) return false;
+
+    return true;
+  }
+
+  /*
+   * ステージの初期化が成功しているかどうかの確認
+   */
+  bool testCase2(){
+    unitIdCheckList[1] = true;
+    if(unitIdCheckList.size() != 1) return false;
+    cv.stageInitialize();
+    if(unitIdCheckList.size() != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * サンプル入力がしっかりと取れているかどうか
+   */
+  bool testCase3(){
+    if(stageNumber != 0) return false;
+    if(turn != 27) return false;
+    if(myResourceCount != 29) return false;
+    if(myUnitCount != 13) return false;
+    if(enemyUnitCount != 0) return false;
+    if(resourceCount != 1) return false;
 
     return true;
   }
