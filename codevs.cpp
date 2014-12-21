@@ -36,6 +36,8 @@ const int unitHp[UNIT_MAX] = {2000, 5000, 5000, 5000, 50000, 20000, 20000};
 const int unitAttackRange[UNIT_MAX] = {2, 2, 2, 2, 10, 2, 2};
 // 各ユニットの視野
 const int unitEyeRange[UNIT_MAX] = { 4, 4, 4, 4, 10, 10, 4};
+// 各ユニットの行動の可否
+const int unitCanMove[UNIT_MAX] = {true, true, true, true, false, false, false};
 
 const int MAX_UNIT_ID   = 20010;  // ユニットのIDの上限
 const int HEIGHT        = 100;    // フィールドの横幅
@@ -60,8 +62,11 @@ const int DAMAGE_TABLE[7][7] = {
 
 // ユニットが持つ構造
 struct Unit{
-  int id;           // ユニットの種別を表すID
+  int id;           // ユニットのID
+  int y;            // y座標
+  int x;            // x座標
   int hp;           // HP
+  int type;         // ユニットの種別
   int eyeRange;     // 視野
   int attackRange;  // 攻撃範囲
   bool canMove;     // 移動できるかどうか
@@ -82,9 +87,9 @@ int myUnitCount;              // 自軍のユニット数
 int enemyUnitCount;           // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
-Unit* unitList[MAX_UNIT_ID];  // ユニットのリスト
+Unit unitList[MAX_UNIT_ID];  // ユニットのリスト
 
-char field[HEIGHT][WIDTH];        // ゲームフィールド
+Node* field[HEIGHT][WIDTH];        // ゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
 
@@ -128,6 +133,17 @@ class Codevs{
      */
     void stageInitialize(){
       unitIdCheckList.clear();
+
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          Node node;
+          node.id = y * WIDTH + x;
+          node.y  = y;
+          node.x  = x;
+
+          field[y][x] = &node;
+        }
+      }
     }
 
     /*
@@ -141,10 +157,13 @@ class Codevs{
       int unitType; // ユニットの種類
       string str;   // 終端文字列「END」を格納するだけの変数
 
-
       // 現在のステージ数(0-index)
       scanf("%d", &stageNumber);
 
+      /* 
+       * 今のステージ数と取得したステージ数が異なる場合は
+       * 新規ステージなので初期化を行う
+       */
       if(stageNumber != currentStageNumber){
         stageInitialize();
         currentStageNumber = stageNumber;
@@ -162,11 +181,20 @@ class Codevs{
       // 自軍ユニットの詳細
       for(int i = 0; i < myUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
+
+        // チェックリストに載っていない場合は、新しくユニットのデータを生成する
+        if(!unitIdCheckList[unitId]){
+          Unit unit = createUnit(unitId, y, x, hp, unitType);
+          unitList[unitId] = unit;
+        }else{
+          updateUnit(unitId, y, x, hp);
+        }
       }
 
       // 視野内の敵軍のユニット数
       scanf("%d", &enemyUnitCount);
 
+      // 敵軍ユニットの詳細
       for(int i = 0; i < enemyUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
       }
@@ -174,12 +202,40 @@ class Codevs{
       // 視野内の資源の数
       scanf("%d", &resourceCount);
 
+      // 資源マスの詳細
       for(int i = 0; i < resourceCount; i++){
         scanf("%d %d", &y, &x);
       }
 
       // 終端文字列
       cin >> str;
+    }
+
+    /*
+     * ユニットの作成を行う
+     */
+    Unit createUnit(int unitId, int y, int x, int hp, int unitType){
+      Unit unit;
+      unit.id           = unitId;
+      unit.y            = y;
+      unit.x            = x;
+      unit.hp           = hp;
+      unit.type         = unitType;
+      unit.attackRange  = unitAttackRange[unitType];
+      unit.eyeRange     = unitEyeRange[unitType];
+      unit.canMove      = unitCanMove[unitType];
+
+      return unit;
+    }
+
+    /*
+     * ユニットの更新を行う(座標と残りHP)
+     */
+    void updateUnit(int unitId, int y, int x, int hp){
+      Unit *unit = &unitList[unitId];
+      unit->y   = y;
+      unit->x   = x;
+      unit->hp  = hp;
     }
 
     void run(){
@@ -236,7 +292,7 @@ class Codevs{
      * 渡された座標の距離を計算
      */
     int calcDist(int y1, int x1, int y2, int x2){
-      return absDist[x1*WIDTH+x2] + absDist[y1*HEIGHT+y2];
+      return absDist[x1*WIDTH+x2] + absDist[y1*WIDTH+y2];
     }
 
     /*
@@ -245,7 +301,7 @@ class Codevs{
     void showField(){
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          fprintf(stderr, "%02d", field[y][x]);
+          fprintf(stderr, "%02d", field[y][x]->id);
         }
         fprintf(stderr, "\n");
       }
@@ -279,6 +335,8 @@ class CodevsTest{
    * ステージの初期化が成功しているかどうかの確認
    */
   bool testCase2(){
+    unitIdCheckList.clear();
+
     unitIdCheckList[1] = true;
     if(unitIdCheckList.size() != 1) return false;
     cv.stageInitialize();
