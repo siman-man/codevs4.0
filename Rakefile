@@ -7,3 +7,7 @@ end
 task :run do
   system("./#{@filename}")
 end
+
+task :test do
+  system("./#{@filename} < sample.in")
+end
