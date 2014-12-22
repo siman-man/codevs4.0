@@ -349,14 +349,14 @@ class Codevs{
      * 上に動く
      */
     void moveUp(int unitId){
-      Unit *unit = &unitList[unitId];
-      unit->y -= 1;
+      unitList[unitId].y -= 1;
     }
 
     /*
      * 下に動く
      */
     void moveDown(int unitId){
+      unitList[unitId].y += 1;
     }
 
     /*
@@ -444,6 +444,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase4: %s\n", testCase4()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase5: %s\n", testCase5()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase6: %s\n", testCase6()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase7: %s\n", testCase7()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -528,6 +529,19 @@ class CodevsTest{
     cv.moveUp(unit->id);
 
     return (x == unit->x && y-1 == unit->y);
+  }
+
+  /*
+   * 下に移動がちゃんと出来ているかどうか
+   */
+  bool testCase7(){
+    Unit *unit = &unitList[0];
+    int x = unit->x;
+    int y = unit->y;
+
+    cv.moveDown(unit->id);
+
+    return (x == unit->x && y+1 == unit->y);
   }
 };
 
