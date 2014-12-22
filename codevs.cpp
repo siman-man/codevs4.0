@@ -40,13 +40,14 @@ const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_VILLAGE  =  9; // 村を生産
 const int CREATE_BASE     = 10; // 拠点
 
-const int UNIT_MAX = 7; // ユニットの種類
+const int OPERATION_MAX = 11;   // 行動の種類
+const int UNIT_MAX = 7;         // ユニットの種類
 
 const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
 
-// 各ユニットの生産にかかるコスト
-const int unitCost[UNIT_MAX] = {40, 20, 40, 60, -1, 100, 500};
+// 各ユニットの生産にかかるコスト(上の「行動一覧」と一致させておく)
+const int unitCost[OPERATION_MAX] = { -1, -1, -1, -1, -1, 40, 20, 40, 60, 100, 500};
 // 各ユニットのHP
 const int unitHp[UNIT_MAX] = {2000, 5000, 5000, 5000, 50000, 20000, 20000};
 // 各ユニットの攻撃範囲
@@ -78,15 +79,15 @@ const int DAMAGE_TABLE[7][7] = {
 };
 
 // 各ユニットが出来る行動 [ユニットID][行動リスト]
-const bool OPERATION_LIST[7][10] = {
-  /*         動上   動下   動左   動右   産労   産騎   産闘   産殺   産村   産拠 */
-  /* 労 */ { true,  true,  true,  true, false, false, false, false,  true,  true},
-  /* 騎 */ { true,  true,  true,  true, false, false, false, false, false, false},
-  /* 闘 */ { true,  true,  true,  true, false, false, false, false, false, false},
-  /* 殺 */ { true,  true,  true,  true, false, false, false, false, false, false},
-  /* 城 */ {false, false, false, false,  true, false, false, false, false, false},
-  /* 村 */ {false, false, false, false,  true, false, false, false, false, false},
-  /* 拠 */ {false, false, false, false, false,  true,  true,  true, false, false}
+const bool OPERATION_LIST[7][11] = {
+  /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産村   産拠 */
+  /* 労 */ {true,  true,  true,  true,  true, false, false, false, false,  true,  true},
+  /* 騎 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
+  /* 闘 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
+  /* 殺 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
+  /* 城 */ {true, false, false, false, false,  true, false, false, false, false, false},
+  /* 村 */ {true, false, false, false, false,  true, false, false, false, false, false},
+  /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false}
 };
 
 // ユニットが持つ構造
@@ -322,6 +323,7 @@ class Codevs{
           moveRight(unitId);
           break;
         case CREATE_WORKER:
+          createWorker(unitId);
           break;
         case CREATE_KNIGHT:
           break;
@@ -374,6 +376,12 @@ class Codevs{
     }
 
     /*
+     * ワーカーの生産
+     */
+    void createWorker(int unitid){
+    }
+
+    /*
      * 行動フェーズ
      */
     void move(){
@@ -406,6 +414,8 @@ class Codevs{
 
     /*
      * 渡された座標が壁かどうかを判定する。
+     * y: y座標
+     * x: x座標
      */
     bool isWall(int y, int x){
       return walls[y+1][x+1];
@@ -421,6 +431,15 @@ class Codevs{
       int nx = x + dx[direct];
 
       return !isWall(ny,nx);
+    }
+
+    /*
+     * ユニットの生産が可能かどうか
+     * buildType: 生産したい物
+     * unitTType: ユニットの種類
+     */
+    bool canBuild(int unitType, int buildType){
+      return (OPERATION_LIST[unitType][buildType] && unitCost[buildType] <= myResourceCount);
     }
 
     /*
@@ -440,15 +459,16 @@ class CodevsTest{
 
   public:
   void testRun(){
-    fprintf(stderr, "TestCase1: %s\n", testCase1()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase2: %s\n", testCase2()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase3: %s\n", testCase3()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase4: %s\n", testCase4()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase5: %s\n", testCase5()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase6: %s\n", testCase6()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase7: %s\n", testCase7()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase8: %s\n", testCase8()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase9: %s\n", testCase9()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase1:\t%s\n", testCase1()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase2:\t%s\n", testCase2()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase3:\t%s\n", testCase3()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase4:\t%s\n", testCase4()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase5:\t%s\n", testCase5()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase6:\t%s\n", testCase6()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase7:\t%s\n", testCase7()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase8:\t%s\n", testCase8()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase9:\t%s\n", testCase9()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase10:\t%s\n", testCase10()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -572,6 +592,45 @@ class CodevsTest{
     cv.moveRight(unit->id);
 
     return (x+1 == unit->x && y == unit->y);
+  }
+
+  /*
+   * 「生産可否判定」がちゃんと出来ているかどうか
+   */
+  bool testCase10(){
+    Unit *castel  = &unitList[0];
+    Unit *village = &unitList[1];
+    Unit *base    = &unitList[2];
+    Unit *worker  = &unitList[3];
+
+    myResourceCount = 19;
+    if(cv.canBuild(castel->type, CREATE_KNIGHT)) return false;
+    if(cv.canBuild(village->type, CREATE_WORKER)) return false;
+    if(cv.canBuild(base->type, CREATE_KNIGHT)) return false;
+    if(cv.canBuild(base->type, CREATE_FIGHER)) return false;
+
+    myResourceCount = 20;
+    if(!cv.canBuild(base->type, CREATE_KNIGHT)) return false;
+
+    myResourceCount = 40;
+    if(!cv.canBuild(village->type, CREATE_WORKER)) return false;
+    if(!cv.canBuild(castel->type, CREATE_WORKER)) return false;
+    if(!cv.canBuild(base->type, CREATE_KNIGHT)) return false;
+    if(!cv.canBuild(base->type, CREATE_FIGHER)) return false;
+    if(cv.canBuild(base->type, CREATE_ASSASIN)) return false;
+
+    myResourceCount = 60;
+    if(!cv.canBuild(base->type, CREATE_ASSASIN)) return false;
+    if(cv.canBuild(worker->type, CREATE_VILLAGE)) return false;
+
+    myResourceCount = 100;
+    if(!cv.canBuild(worker->type, CREATE_VILLAGE)) return false;
+    if(cv.canBuild(worker->type, CREATE_BASE)) return false;
+
+    myResourceCount = 500;
+    if(!cv.canBuild(worker->type, CREATE_BASE)) return false;
+
+    return true;
   }
 };
 
