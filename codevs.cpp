@@ -28,7 +28,7 @@ const int VILLAGE = 5; // 村
 const int BASE    = 6; // 拠点
 
 // 行動一覧
-const int NONE            =  0; // 何も移動しない
+const int NO_MOVE         =  0; // 何も移動しない
 const int MOVE_UP         =  1; // 上に移動
 const int MOVE_DOWN       =  2; // 下に移動
 const int MOVE_LEFT       =  3; // 左に移動
@@ -40,6 +40,13 @@ const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_VILLAGE  =  9; // 村を生産
 const int CREATE_BASE     = 10; // 拠点
 
+// ユニットの行動タイプ
+const int NONE    = 0;  // 何もしない(何も出来ない)
+const int SEARCH  = 1;  // 探索(空いてないマスを探索)
+const int DESTROY = 2;  // 破壊(敵を見つけて破壊)
+const int PICKING = 3;  // 資源採取
+
+// 各種最大値
 const int OPERATION_MAX = 11;   // 行動の種類
 const int UNIT_MAX = 7;         // ユニットの種類
 
@@ -93,6 +100,7 @@ const bool OPERATION_LIST[7][11] = {
 // ユニットが持つ構造
 struct Unit{
   int id;           // ユニットのID
+  int mode;         // ユニットの状態
   int y;            // y座標
   int x;            // x座標
   int hp;           // HP
@@ -271,6 +279,13 @@ class Codevs{
       unit.movable      = unitCanMove[unitType];
 
       return unit;
+    }
+
+    /*
+     * ユニットの作成を行う
+     */
+    void createUnit(int y, int x, int unitType){
+      myResourceCount -= unitCost[unitType];
     }
 
     /*
@@ -467,6 +482,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase8:\t%s\n", testCase8()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase9:\t%s\n", testCase9()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase10:\t%s\n", testCase10()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase11:\t%s\n", testCase11()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -535,7 +551,7 @@ class CodevsTest{
     if(cv.canMove(0,0,MOVE_LEFT)) return false;
     if(!cv.canMove(0,0,MOVE_DOWN)) return false;
     if(!cv.canMove(0,0,MOVE_RIGHT)) return false;
-    if(!cv.canMove(0,0,NONE)) return false;
+    if(!cv.canMove(0,0,NO_MOVE)) return false;
 
     return true;
   }
@@ -627,6 +643,19 @@ class CodevsTest{
 
     myResourceCount = 500;
     if(!cv.canBuild(worker->type, CREATE_BASE)) return false;
+
+    return true;
+  }
+
+  /*
+   * ユニットが作成できるどうかの確認
+   */
+  bool testCase11(){
+    myResourceCount = 40;
+
+    cv.createUnit(0,0,CREATE_WORKER);
+
+    if(myResourceCount != 0) return false;
 
     return true;
   }
