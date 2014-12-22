@@ -370,6 +370,7 @@ class Codevs{
      * 右に動く
      */
     void moveRight(int unitId){
+      unitList[unitId].x += 1;
     }
 
     /*
@@ -447,6 +448,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase6: %s\n", testCase6()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase7: %s\n", testCase7()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase8: %s\n", testCase8()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase9: %s\n", testCase9()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -557,6 +559,19 @@ class CodevsTest{
     cv.moveLeft(unit->id);
 
     return (x-1 == unit->x && y == unit->y);
+  }
+
+  /*
+   * 「右に移動」がちゃんと出来ているかどうか
+   */
+  bool testCase9(){
+    Unit *unit = &unitList[0];
+    int x = unit->x;
+    int y = unit->y;
+
+    cv.moveRight(unit->id);
+
+    return (x+1 == unit->x && y == unit->y);
   }
 };
 
