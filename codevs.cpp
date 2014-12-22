@@ -26,6 +26,18 @@ const int CASTEL  = 4; // 城
 const int VILLAGE = 5; // 村
 const int BASE    = 6; // 拠点
 
+// 行動一覧
+const int NONE            = 0; // 何も移動しない
+const int MOVE_UP         = 1; // 上に移動
+const int MOVE_DOWN       = 2; // 下に移動
+const int MOVE_LEFT       = 3; // 左に移動
+const int MOVE_RIGHT      = 4; // 右に移動
+const int CREATE_WORKER   = 5; // ワーカーを生産
+const int CREATE_KNIGHT   = 6; // ナイトを生産
+const int CREATE_ASSASIN  = 7; // アサシンを生産
+const int CREATE_VILLAGE  = 8; // 村を生産
+const int CREATE_BASE     = 9; // 拠点
+
 const int UNIT_MAX = 7; // ユニットの種類
 
 // 各ユニットの生産にかかるコスト
@@ -48,7 +60,7 @@ int absDist[WIDTH*WIDTH];
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
 
-// ダメージテーブル
+// ダメージテーブル [攻撃する側][攻撃される側]
 const int DAMAGE_TABLE[7][7] = {
   /*          労   騎   闘   殺   城   村   拠 */
   /* 労 */ { 100, 100, 100, 100, 100, 100, 100}, 
@@ -58,6 +70,18 @@ const int DAMAGE_TABLE[7][7] = {
   /* 城 */ { 100, 100, 100, 100, 100, 100, 100}, 
   /* 村 */ { 100, 100, 100, 100, 100, 100, 100},
   /* 拠 */ { 100, 100, 100, 100, 100, 100, 100}
+};
+
+// 各ユニットが出来る行動 [ユニットID][行動リスト]
+const bool OPERATION_LIST[7][10] = {
+  /*         動上   動下   動左   動右   産労   産騎   産闘   産殺   産村   産拠 */
+  /* 労 */ { true,  true,  true,  true, false, false, false, false,  true,  true},
+  /* 騎 */ { true,  true,  true,  true, false, false, false, false, false, false},
+  /* 闘 */ { true,  true,  true,  true, false, false, false, false, false, false},
+  /* 殺 */ { true,  true,  true,  true, false, false, false, false, false, false},
+  /* 城 */ {false, false, false, false,  true, false, false, false, false, false},
+  /* 村 */ {false, false, false, false,  true, false, false, false, false, false},
+  /* 拠 */ {false, false, false, false, false,  true,  true,  true, false, false}
 };
 
 // ユニットが持つ構造
@@ -74,9 +98,12 @@ struct Unit{
 
 // フィールドの1マスに対応する
 struct Node{
-  int id;           // ノードのID
-  int y;            // y座標
-  int x;            // x座標
+  bool opened;        // 一度調査したことがあるかどうか
+};
+
+// ゲーム・フィールド全体の構造
+struct GameField{
+  short openNodeCount;
 };
 
 int remainingTime;            // 残り時間
@@ -89,8 +116,9 @@ int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
 Unit unitList[MAX_UNIT_ID];  // ユニットのリスト
 
-Node* field[HEIGHT][WIDTH];        // ゲームフィールド
-map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
+Node field[HEIGHT][WIDTH];         // ゲームフィールド
+Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
+map<int, bool> unitIdCheckList;     // IDが存在しているかどうかのチェック
 
 
 class Codevs{
@@ -100,7 +128,7 @@ class Codevs{
      */
     void init(){
       currentStageNumber = -1;
-      memset(field, -1, sizeof(field));
+      memcpy(tempField, field, sizeof(field));
 
       absDistInitialize();
 
@@ -137,11 +165,8 @@ class Codevs{
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
           Node node;
-          node.id = y * WIDTH + x;
-          node.y  = y;
-          node.x  = x;
 
-          field[y][x] = &node;
+          field[y][x] = node;
         }
       }
     }
@@ -301,7 +326,6 @@ class Codevs{
     void showField(){
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          fprintf(stderr, "%02d", field[y][x]->id);
         }
         fprintf(stderr, "\n");
       }
@@ -365,7 +389,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  cvt.testRun();
+  //cvt.testRun();
 
   return 0;
 }
