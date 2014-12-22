@@ -18,6 +18,7 @@ using namespace std;
 
 typedef long long ll;
 
+// ユニット一覧
 const int WORKER  = 0; // ワーカー
 const int KNIGHT  = 1; // ナイト
 const int FIGHER  = 2; // ファイター
@@ -27,16 +28,17 @@ const int VILLAGE = 5; // 村
 const int BASE    = 6; // 拠点
 
 // 行動一覧
-const int NONE            = 0; // 何も移動しない
-const int MOVE_UP         = 1; // 上に移動
-const int MOVE_DOWN       = 2; // 下に移動
-const int MOVE_LEFT       = 3; // 左に移動
-const int MOVE_RIGHT      = 4; // 右に移動
-const int CREATE_WORKER   = 5; // ワーカーを生産
-const int CREATE_KNIGHT   = 6; // ナイトを生産
-const int CREATE_ASSASIN  = 7; // アサシンを生産
-const int CREATE_VILLAGE  = 8; // 村を生産
-const int CREATE_BASE     = 9; // 拠点
+const int NONE            =  0; // 何も移動しない
+const int MOVE_UP         =  1; // 上に移動
+const int MOVE_DOWN       =  2; // 下に移動
+const int MOVE_LEFT       =  3; // 左に移動
+const int MOVE_RIGHT      =  4; // 右に移動
+const int CREATE_WORKER   =  5; // ワーカーを生産
+const int CREATE_KNIGHT   =  6; // ナイトを生産
+const int CREATE_FIGHER   =  7; // ファイターを生産
+const int CREATE_ASSASIN  =  8; // アサシンを生産
+const int CREATE_VILLAGE  =  9; // 村を生産
+const int CREATE_BASE     = 10; // 拠点
 
 const int UNIT_MAX = 7; // ユニットの種類
 
@@ -272,21 +274,80 @@ class Codevs{
 
         eachTurnProc();
 
-        finalInstruction();
+        finalOperation();
       }
     }
 
     /*
      * 最終指示(このターンの最終的な行動を出力)
      */
-    void finalInstruction(){
+    void finalOperation(){
       printf("0\n");
     }
 
     /*
-     * 指示フェーズ
+     * ユニットに対して指示を出す
      */
-    void instruction(){
+    void operation(int id, int type){
+      switch(type){
+        case MOVE_UP:
+          moveUp(id);
+          break;
+        case MOVE_DOWN:
+          moveDown(id);
+          break;
+        case MOVE_LEFT:
+          moveLeft(id);
+          break;
+        case MOVE_RIGHT:
+          moveRight(id);
+          break;
+        case CREATE_WORKER:
+          break;
+        case CREATE_KNIGHT:
+          break;
+        case CREATE_FIGHER:
+          break;
+        case CREATE_ASSASIN:
+          break;
+        case CREATE_VILLAGE:
+          break;
+        case CREATE_BASE:
+          break;
+        default:
+          noMove();
+          break;
+      }
+    }
+
+    /*
+     * 何も行動しない
+     */
+    void noMove(){
+    }
+
+    /*
+     * 上に動く
+     */
+    void moveUp(int id){
+    }
+
+    /*
+     * 下に動く
+     */
+    void moveDown(int id){
+    }
+
+    /*
+     * 左に動く
+     */
+    void moveLeft(int id){
+    }
+
+    /*
+     * 右に動く
+     */
+    void moveRight(int id){
     }
 
     /*
