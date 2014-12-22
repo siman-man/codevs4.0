@@ -116,11 +116,12 @@ int myUnitCount;              // 自軍のユニット数
 int enemyUnitCount;           // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
-Unit unitList[MAX_UNIT_ID];  // ユニットのリスト
+Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
 
-Node field[HEIGHT][WIDTH];         // ゲームフィールド
+bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
+Node field[HEIGHT][WIDTH];        // ゲームフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
-map<int, bool> unitIdCheckList;     // IDが存在しているかどうかのチェック
+map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
 
 class Codevs{
@@ -133,6 +134,13 @@ class Codevs{
       memcpy(tempField, field, sizeof(field));
 
       absDistInitialize();
+
+      // 壁判定の初期化処理
+      for(int y = 0; y <= HEIGHT+1; y++){
+        for(int x = 0; x <= WIDTH+1; x++){
+          walls[y][x] = (y == 0 || x == 0 || y == HEIGHT+1 || x == WIDTH + 1);
+        }
+      }
 
       // 一番最初でプレイヤー名の出力
       printf("%s\n", PLAYER_NAME.c_str());
@@ -224,6 +232,14 @@ class Codevs{
       // 敵軍ユニットの詳細
       for(int i = 0; i < enemyUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
+
+        // チェックリストに載っていない場合は、新しくユニットのデータを生成する
+        if(!unitIdCheckList[unitId]){
+          Unit unit = createUnit(unitId, y, x, hp, unitType);
+          unitList[unitId] = unit;
+        }else{
+          updateUnit(unitId, y, x, hp);
+        }
       }
 
       // 視野内の資源の数
@@ -382,6 +398,13 @@ class Codevs{
     }
 
     /*
+     * 渡された座標が壁かどうかを判定する。
+     */
+    bool isWall(int y, int x){
+      return walls[y+1][x+1];
+    }
+
+    /*
      * フィールドの表示
      */
     void showField(){
@@ -401,6 +424,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase1: %s\n", testCase1()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase2: %s\n", testCase2()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase3: %s\n", testCase3()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase4: %s\n", testCase4()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -443,6 +467,23 @@ class CodevsTest{
 
     return true;
   }
+
+  /*
+   * 壁判定がちゃんと出来ているかどうか
+   */
+  bool testCase4(){
+    if(!cv.isWall(-1,-1)) return false;
+    if(!cv.isWall(-1, 0)) return false;
+    if(!cv.isWall(HEIGHT,WIDTH)) return false;
+    if(!cv.isWall(HEIGHT-1,WIDTH)) return false;
+    if(cv.isWall(10,10)) return false;
+    if(cv.isWall(0,0)) return false;
+    if(cv.isWall(0,WIDTH-1)) return false;
+    if(cv.isWall(HEIGHT-1,0)) return false;
+    if(cv.isWall(HEIGHT-1,WIDTH-1)) return false;
+
+    return true;
+  }
 };
 
 int main(){
@@ -450,7 +491,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  //cvt.testRun();
+  cvt.testRun();
 
   return 0;
 }
