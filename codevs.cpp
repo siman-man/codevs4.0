@@ -223,8 +223,7 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          Unit unit = createUnit(unitId, y, x, hp, unitType);
-          unitList[unitId] = unit;
+          unitList[unitId] = addUnit(unitId, y, x, hp, unitType);
         }else{
           updateUnit(unitId, y, x, hp);
         }
@@ -239,8 +238,7 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          Unit unit = createUnit(unitId, y, x, hp, unitType);
-          unitList[unitId] = unit;
+          unitList[unitId] = addUnit(unitId, y, x, hp, unitType);
         }else{
           updateUnit(unitId, y, x, hp);
         }
@@ -259,9 +257,9 @@ class Codevs{
     }
 
     /*
-     * ユニットの作成を行う
+     * ユニットの追加を行う
      */
-    Unit createUnit(int unitId, int y, int x, int hp, int unitType){
+    Unit addUnit(int unitId, int y, int x, int hp, int unitType){
       Unit unit;
       unit.id           = unitId;
       unit.y            = y;
