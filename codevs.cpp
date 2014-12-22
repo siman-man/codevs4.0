@@ -42,6 +42,9 @@ const int CREATE_BASE     = 10; // 拠点
 
 const int UNIT_MAX = 7; // ユニットの種類
 
+const int dy[5] = {0,-1, 1, 0, 0};
+const int dx[5] = {0, 0, 0,-1, 1};
+
 // 各ユニットの生産にかかるコスト
 const int unitCost[UNIT_MAX] = {40, 20, 40, 60, -1, 100, 500};
 // 各ユニットのHP
@@ -95,7 +98,7 @@ struct Unit{
   int type;         // ユニットの種別
   int eyeRange;     // 視野
   int attackRange;  // 攻撃範囲
-  bool canMove;     // 移動できるかどうか
+  bool movable;     // 移動できるかどうか
 };
 
 // フィールドの1マスに対応する
@@ -266,7 +269,7 @@ class Codevs{
       unit.type         = unitType;
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
-      unit.canMove      = unitCanMove[unitType];
+      unit.movable      = unitCanMove[unitType];
 
       return unit;
     }
@@ -304,19 +307,19 @@ class Codevs{
     /*
      * ユニットに対して指示を出す
      */
-    void operation(int id, int type){
+    void operation(int unitId, int type){
       switch(type){
         case MOVE_UP:
-          moveUp(id);
+          moveUp(unitId);
           break;
         case MOVE_DOWN:
-          moveDown(id);
+          moveDown(unitId);
           break;
         case MOVE_LEFT:
-          moveLeft(id);
+          moveLeft(unitId);
           break;
         case MOVE_RIGHT:
-          moveRight(id);
+          moveRight(unitId);
           break;
         case CREATE_WORKER:
           break;
@@ -345,25 +348,26 @@ class Codevs{
     /*
      * 上に動く
      */
-    void moveUp(int id){
+    void moveUp(int unitId){
+      Unit *unit = &unitList[unitId];
     }
 
     /*
      * 下に動く
      */
-    void moveDown(int id){
+    void moveDown(int unitId){
     }
 
     /*
      * 左に動く
      */
-    void moveLeft(int id){
+    void moveLeft(int unitId){
     }
 
     /*
      * 右に動く
      */
-    void moveRight(int id){
+    void moveRight(int unitId){
     }
 
     /*
@@ -405,6 +409,18 @@ class Codevs{
     }
 
     /*
+     * 移動が出来るかどうかのチェックを行う
+     * y: y座標
+     * x: x座標
+     */
+    bool canMove(int y, int x, int direct){
+      int ny = y + dy[direct];
+      int nx = x + dx[direct];
+
+      return !isWall(ny,nx);
+    }
+
+    /*
      * フィールドの表示
      */
     void showField(){
@@ -425,6 +441,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase2: %s\n", testCase2()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase3: %s\n", testCase3()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase4: %s\n", testCase4()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase5: %s\n", testCase5()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -481,6 +498,19 @@ class CodevsTest{
     if(cv.isWall(0,WIDTH-1)) return false;
     if(cv.isWall(HEIGHT-1,0)) return false;
     if(cv.isWall(HEIGHT-1,WIDTH-1)) return false;
+
+    return true;
+  }
+
+  /*
+   * 移動判定が出来ているかどうか
+   */
+  bool testCase5(){
+    if(cv.canMove(0,0,MOVE_UP)) return false;
+    if(cv.canMove(0,0,MOVE_LEFT)) return false;
+    if(!cv.canMove(0,0,MOVE_DOWN)) return false;
+    if(!cv.canMove(0,0,MOVE_RIGHT)) return false;
+    if(!cv.canMove(0,0,NONE)) return false;
 
     return true;
   }
