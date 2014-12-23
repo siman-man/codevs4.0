@@ -99,17 +99,24 @@ const bool OPERATION_LIST[7][12] = {
   /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false, false}
 };
 
+//
+struct Operation{
+  short unitId;
+  char operation;
+};
+
 // ユニットが持つ属性
 struct Unit{
-  int   id;           // ユニットのID
-  int   mode;         // ユニットの状態
+  short id;           // ユニットのID
+  char  mode;         // ユニットの状態
   char  y;            // y座標
   char  x;            // x座標
   int   hp;           // HP
-  int   type;         // ユニットの種別
-  int   eyeRange;     // 視野
-  int   attackRange;  // 攻撃範囲
+  char  type;         // ユニットの種別
+  char  eyeRange;     // 視野
+  char  attackRange;  // 攻撃範囲
   bool  movable;      // 移動できるかどうか
+  short timestamp;    // 更新ターン
 
   int calcEvaluation(){
     return 0;
@@ -138,6 +145,7 @@ int enemyAllUnitCount;           // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
+set<short> myActiveUnitList;  // 生存している自軍のユニットIDリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
@@ -193,6 +201,9 @@ class Codevs{
       // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
 
+      // アクティブユニットリストの初期化
+      myActiveUnitList.clear();
+
       // 探索が完了したマスの初期化
       gameStage.openNodeCount = 0;
 
@@ -242,7 +253,7 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          unitList[unitId] = addUnit(unitId, y, x, hp, unitType);
+          addUnit(unitId, y, x, hp, unitType);
         }else{
           updateUnit(unitId, y, x, hp);
         }
@@ -257,7 +268,7 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          unitList[unitId] = addUnit(unitId, y, x, hp, unitType);
+          addUnit(unitId, y, x, hp, unitType);
         }else{
           updateUnit(unitId, y, x, hp);
         }
@@ -278,7 +289,7 @@ class Codevs{
     /*
      * ユニットの追加を行う
      */
-    Unit addUnit(int unitId, int y, int x, int hp, int unitType){
+    void addUnit(int unitId, int y, int x, int hp, int unitType){
       Unit unit;
       unit.id           = unitId;
       unit.y            = y;
@@ -288,8 +299,10 @@ class Codevs{
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
+      unit.timestamp    = turn;
 
-      return unit;
+      unitList[unitId] = unit;
+      myActiveUnitList.insert(unitId);
     }
 
     /*
@@ -323,11 +336,33 @@ class Codevs{
      */
     void updateUnit(int unitId, int y, int x, int hp){
       Unit *unit = &unitList[unitId];
-      unit->y   = y;
-      unit->x   = x;
-      unit->hp  = hp;
+      unit->y         = y;
+      unit->x         = x;
+      unit->hp        = hp;
+      unit->timestamp = turn;
     }
 
+    /*
+     * 自軍の生存確認
+     */
+    void unitSurvivalCheck(){
+      set<short> tempList = myActiveUnitList;
+      set<short>::iterator it = tempList.begin();
+
+      while(it != tempList.end()){
+        Unit *unit = &unitList[*it];
+
+        if(unit->timestamp != turn){
+          myActiveUnitList.erase(unit->id);
+        }
+
+        it++;
+      }
+    }
+
+    /*
+     * ゲームの実行
+     */
     void run(){
       init();
 
@@ -335,8 +370,10 @@ class Codevs{
       while(cin >> remainingTime){
         fprintf(stderr, "Remaing time is %dms\n", remainingTime);
 
+        // 各ターンで行う処理(主に入力の処理)
         eachTurnProc();
 
+        // 最終的な出力
         finalOperation();
       }
     }
@@ -514,6 +551,8 @@ class CodevsTest{
     fprintf(stderr, "TestCase10:\t%s\n", testCase10()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase11:\t%s\n", testCase11()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase12:\t%s\n", testCase12()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase13:\t%s\n", testCase13()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase14:\t%s\n", testCase14()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -588,7 +627,7 @@ class CodevsTest{
   }
 
   /*
-   * 「上に移動」がちゃんと出来ているかどうか
+   * 「上に移動」が出来ているかどうか
    */
   bool testCase6(){
     Unit *unit = &unitList[0];
@@ -601,7 +640,7 @@ class CodevsTest{
   }
 
   /*
-   * 「下に移動」がちゃんと出来ているかどうか
+   * 「下に移動」が出来ているかどうか
    */
   bool testCase7(){
     Unit *unit = &unitList[0];
@@ -614,7 +653,7 @@ class CodevsTest{
   }
 
   /*
-   * 「左に移動」がちゃんと出来ているかどうか
+   * 「左に移動」が出来ているかどうか
    */
   bool testCase8(){
     Unit *unit = &unitList[0];
@@ -627,7 +666,7 @@ class CodevsTest{
   }
 
   /*
-   * 「右に移動」がちゃんと出来ているかどうか
+   * 「右に移動」が来ているかどうか
    */
   bool testCase9(){
     Unit *unit = &unitList[0];
@@ -640,7 +679,7 @@ class CodevsTest{
   }
 
   /*
-   * 「生産可否判定」がちゃんと出来ているかどうか
+   * 「生産可否判定」が出来ているかどうか
    */
   bool testCase10(){
     Unit *castel  = &unitList[0];
@@ -709,7 +748,7 @@ class CodevsTest{
   }
 
   /*
-   * ノードの作成がちゃんと出来ているかどうか
+   * ノードの作成が出来ているかどうか
    */
   bool testCase12(){
     Node node = cv.createNode();
@@ -719,6 +758,54 @@ class CodevsTest{
     if(node.myUnitCount[BASE] != 0) return false;
     if(node.enemyUnitCount[WORKER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * ユニットの追加が出来ているかどうかの確認
+   */
+  bool testCase13(){
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    if(unitList[unitId].type != WORKER) return false;
+    if(unitList[unitId].hp != 1980) return false;
+    if(!unitList[unitId].movable) return false;
+
+    unitId = 101;
+    cv.addUnit(unitId, 50, 50, 20000, VILLAGE);
+    if(unitList[unitId].type != VILLAGE) return false;
+    if(unitList[unitId].hp != 20000) return false;
+    if(unitList[unitId].movable) return false;
+
+    unitId = 102;
+    cv.addUnit(unitId, 30, 30, 20000, BASE);
+    if(unitList[unitId].type != BASE) return false;
+    if(unitList[unitId].hp != 20000) return false;
+    if(unitList[unitId].movable) return false;
+
+    if(myActiveUnitList.size() != 3) return false;
+
+
+    return true;
+  }
+
+  /*
+   * ユニットの生存確認が出来ているかどうかの確認
+   */
+  bool testCase14(){
+    int unitId = 100;
+    cv.stageInitialize();
+
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    unitId = 101;
+    cv.addUnit(unitId, 20, 20, 1980, WORKER);
+    unitList[unitId].timestamp = -1;
+
+    cv.unitSurvivalCheck();
+
+    if(myActiveUnitList.size() != 1) return false;
 
     return true;
   }
