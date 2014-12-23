@@ -112,8 +112,8 @@ const bool OPERATION_LIST[UNIT_MAX][OPERATION_MAX] = {
 
 // ユニットへの指示
 struct Operation{
-  short unitId;       // ユニットID
-  short operation;    // 命令のリスト
+  int unitId;       // ユニットID
+  int operation;    // 命令のリスト
   int   evaluation;   // 命令の評価値
 
   bool operator >(const Operation &e) const{
@@ -123,16 +123,18 @@ struct Operation{
 
 // ユニットが持つ属性
 struct Unit{
-  short id;           // ユニットのID
-  short mode;         // ユニットの状態
-  short y;            // y座標
-  short x;            // x座標
-  int   hp;           // HP
-  short type;         // ユニットの種別
-  short eyeRange;     // 視野
-  short attackRange;  // 攻撃範囲
+  int id;           // ユニットのID
+  int mode;         // ユニットの状態
+  int y;            // y座標
+  int x;            // x座標
+  int destY;        // 目的地のy座標
+  int destX;        // 目的地のx座標
+  int hp;           // HP
+  int type;         // ユニットの種別
+  int eyeRange;     // 視野
+  int attackRange;  // 攻撃範囲
   bool  movable;      // 移動できるかどうか
-  short timestamp;    // 更新ターン
+  int timestamp;    // 更新ターン
 };
 
 // フィールドの1マスに対応する
@@ -141,18 +143,19 @@ struct Node{
   bool opened;              // 調査予定マス
   bool searched;            // 既に調査済みかどうか
   bool rockon;              // ノードを狙っている自軍がいるかどうか
-  short cost;               // ノードのコスト
-  short seenCount;          // ノードを監視しているユニットの数 
-  short myUnitCount[7];     // 自軍の各ユニット数
-  short enemyUnitCount[7];  // 相手の各ユニット数
-  set<short> seenMembers;   // ノードを監視している自軍のメンバー
+  int stamp;                // 足跡
+  int cost;               // ノードのコスト
+  int seenCount;          // ノードを監視しているユニットの数 
+  int myUnitCount[7];     // 自軍の各ユニット数
+  int enemyUnitCount[7];  // 相手の各ユニット数
+  set<int> seenMembers;   // ノードを監視している自軍のメンバー
 };
 
 // ゲーム・フィールド全体の構造
 struct GameStage{
-  short searchedNodeCount;    // 調査済みのマスの数
-  short openedNodeCount;      // 調査予定マスの数
-  short visibleNodeCount;         // 現在確保できている視界の数   
+  int searchedNodeCount;    // 調査済みのマスの数
+  int openedNodeCount;      // 調査予定マスの数
+  int visibleNodeCount;         // 現在確保できている視界の数   
   Node field[HEIGHT][WIDTH];  // ゲームフィールド
 };
 
@@ -180,7 +183,8 @@ int myCastelCoordX;           // 自軍の城のx座標
 int enemyCastelCoordY;        // 敵軍の城のy座標
 int enemyCastelCoordX;        // 敵軍の城のx座標
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
-set<short> myActiveUnitList;  // 生存している自軍のユニットIDリスト
+set<int> myActiveUnitList;    // 生存している自軍のユニットIDリスト
+set<int> resourceNodeList;    // 資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
@@ -311,6 +315,8 @@ class Codevs{
           myCastelCoordX = x;
         }
 
+        gameStage.field[y][x].myUnitCount[unitType] += 1;
+
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
           addUnit(unitId, y, x, hp, unitType);
@@ -348,6 +354,7 @@ class Codevs{
         scanf("%d %d", &y, &x);
 
         gameStage.field[y][x].resource = true;
+        resourceNodeList.insert(y*WIDTH+x);
       }
 
       // 終端文字列
@@ -372,12 +379,38 @@ class Codevs{
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
-      unit.mode         = NONE;
       unit.timestamp    = turn;
 
       unitList[unitId] = unit;
+      unitList[unitId].mode = directFirstMode(&unitList[unitId]);
       myActiveUnitList.insert(unitId);
+      unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
+      checkStamp(y, x, unit.eyeRange * 2);
+    }
+
+    /*
+     * 最初のモードを決める
+     */
+    int directFirstMode(Unit *unit){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
+      switch(unit->type){
+        case WORKER:
+          if(node->resource){
+            return PICKING;
+          }else{
+            return SEARCH;
+          }
+          break;
+        case VILLAGE:
+          return NONE;
+          break;
+        default:
+          break;
+      }
+
+      return NONE;
     }
 
     /*
@@ -388,6 +421,7 @@ class Codevs{
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       node.seenCount = 0;
+      node.stamp = 0;
       node.resource = false;
       node.opened = false;
       node.rockon = false;
@@ -435,13 +469,14 @@ class Codevs{
       unit->timestamp = turn;
 
       checkNode(unitId, y, x, unit->eyeRange);
+      checkStamp(y, x, unit->eyeRange * 2);
     }
 
     /*
      * ユニットのモードの状態の更新を行う
      */
     void updateUnitMode(){
-      set<short>::iterator it = myActiveUnitList.begin();
+      set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
@@ -459,7 +494,7 @@ class Codevs{
 
       switch(unit->type){
         case WORKER:
-          if(gameStage.field[y][x].resource){
+          if(unit->mode == PICKING || pickModeCheck(unit)){
             return PICKING;
           }else{
             return SEARCH;
@@ -477,13 +512,55 @@ class Codevs{
     }
 
     /*
+     * 採取モードに移行するかどうかの確認
+     */
+    bool pickModeCheck(Unit *unit){
+      set<int>::iterator it = resourceNodeList.begin();
+
+      while(it != resourceNodeList.end()){
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+        int dist = calcDist(unit->y, unit->x, y, x);
+
+        if(!gameStage.field[y][x].rockon && checkMinDist(y, x, dist)){
+          gameStage.field[y][x].rockon = true;
+          unit->destY = y;
+          unit->destX = x;
+          return true;
+        }
+
+        it++;
+      }
+
+      return false;
+    }
+
+    /*
+     * 一番距離が近いかの確認
+     */
+    bool checkMinDist(int y, int x, int minDist){
+      set<int>::iterator it = myActiveUnitList.begin();
+
+      while(it != myActiveUnitList.end()){
+        Unit *unit = &unitList[(*it)];
+        int dist = calcDist(unit->y, unit->x, y, x);
+
+        if(minDist > dist) return false;
+
+        it++;
+      }
+
+      return true;
+    }
+
+    /*
      * 自軍の生存確認
      * ユニットのtimestampが更新されていない場合は前のターンで的に倒されたので、
      * リストから排除する。
      */
     void unitSurvivalCheck(){
-      set<short> tempList = myActiveUnitList;
-      set<short>::iterator it = tempList.begin();
+      set<int> tempList = myActiveUnitList;
+      set<int>::iterator it = tempList.begin();
 
       while(it != tempList.end()){
         Unit *unit = &unitList[*it];
@@ -499,17 +576,34 @@ class Codevs{
     /*
      * 評価値の計算
      */
-    int calcEvaluation(Unit *unit){
+    int calcEvaluation(Unit *unit, int operation){
       int castelDist = calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
-      int centerDist = calcDist(unit->y, unit->x, 30, 30);
+      int centerDist = calcDist(unit->y, unit->x, 40, 40);
+      int rightUpDist = calcDist(unit->y, unit->x, 0, 99);
+      int leftBottomDist = calcDist(unit->y, unit->x, 99, 0);
       int sumDist = aroundMyUnitDist(unit);
+      int cost = gameStage.field[unit->y][unit->x].cost;
+      int stamp = gameStage.field[unit->y][unit->x].stamp;
 
-      switch(unit->mode){
-        case SEARCH:
-          return -centerDist + 2 * sumDist + 10 * gameStage.openedNodeCount + 100 * myResourceCount;
+      switch(unit->type){
+        case WORKER:
+          switch(unit->mode){
+            case SEARCH:
+              return -(centerDist+rightUpDist+leftBottomDist) + 100 * cost + 2 * sumDist + 100 * myResourceCount - 20 * stamp;
+              break;
+            case PICKING:
+              return calcPikingEvaluation(unit, operation);
+              break;
+            default:
+              break;
+          }
           break;
-        case PICKING:
-          return 0;
+        case VILLAGE:
+          switch(unit->mode){
+            case NONE:
+              return calcNoneEvaluation(unit, operation);
+              break;
+          }
           break;
         default:
           break;
@@ -519,13 +613,44 @@ class Codevs{
     }
 
     /*
+     * PICKING状態での評価値
+     * 資源マスにいない状態では資源マスを目指すように
+     */
+    int calcPikingEvaluation(Unit *unit, int operation){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
+      if(node->resource){
+        if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
+          return 100;
+        }else{
+          return 10 * node->myUnitCount[WORKER];
+        }
+      }else{
+        return -calcDist(unit->y, unit->x, unit->destY, unit->destX);
+      }
+    }
+
+    /*
+     * NONE
+     */
+    int calcNoneEvaluation(Unit *unit, int operation){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
+      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5){
+        return 100;
+      }else{
+        return 0;
+      }
+    }
+
+    /*
      * 自軍ユニットとの距離
      */
     int aroundMyUnitDist(Unit *unit){
       int dist;
       int sumDist = 0;
 
-      set<short>::iterator it = myActiveUnitList.begin();
+      set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
         Unit *other = &unitList[*it];
@@ -538,7 +663,7 @@ class Codevs{
 
         it++;
       }
-      
+
       return sumDist;
     }
 
@@ -546,7 +671,7 @@ class Codevs{
      * コストを付ける
      */
     void checkCost(int ypos, int xpos){
-      int cost = 10;
+      int cost = 3;
       map<int, bool> checkList;
       typedef pair<Coord, int> cell;
       queue<cell> que;
@@ -566,6 +691,21 @@ class Codevs{
           int ny = coord.y + dy[i];
           int nx = coord.x + dx[i];
           if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), cost-1));
+        }
+      }
+    }
+
+    /*
+     *
+     */
+    void checkStamp(int ypos, int xpos, int eyeRange){
+      for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
+        int diff = 2*abs(ypos-y)/2;
+
+        for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
+          if(isWall(y,x)) continue;
+
+          gameStage.field[y][x].stamp += 1;
         }
       }
     }
@@ -603,11 +743,16 @@ class Codevs{
     /*
      * fieldの初期化を行う
      */
-    void cleanField(){
+    void clearField(){
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          gameStage.field[y][x].seenCount = 0;
-          gameStage.field[y][x].cost = 0;
+          Node *node = &gameStage.field[y][x];
+
+          node->seenCount = 0;
+          node->cost = 0;
+
+          memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
+          memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
         }
       }
     }
@@ -623,7 +768,7 @@ class Codevs{
         fprintf(stderr, "Remaing time is %dms\n", remainingTime);
 
         // フィールドのクリア
-        cleanField();
+        clearField();
 
         // コストをつける
         unknownNode();
@@ -637,8 +782,11 @@ class Codevs{
         // 自軍の各ユニットのモード変更を行う
         updateUnitMode();
 
+        vector<Operation> operationList;
         // 行動フェーズ
-        vector<Operation> operationList = actionPhase();
+        if(turn <= 100){
+          operationList = actionPhase();
+        }
 
         // 最終的な出力
         finalOperation(operationList);
@@ -673,6 +821,7 @@ class Codevs{
 
           gameStage.field[y][x].seenMembers.insert(unitId);
           gameStage.field[y][x].seenCount += 1;
+          gameStage.field[y][x].stamp += 1;
 
           if(!gameStage.field[y][x].searched){
             gameStage.searchedNodeCount += 1;
@@ -932,7 +1081,7 @@ class Codevs{
      * 自軍に対して各種行動を選択する
      */
     vector<Operation> actionPhase(){
-      set<short>::iterator it = myActiveUnitList.begin();
+      set<int>::iterator it = myActiveUnitList.begin();
       vector<Operation> operationList;
 
       // 各ユニット毎に処理を行う
@@ -941,7 +1090,7 @@ class Codevs{
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
         tempGameStage = gameStage;
 
-        fprintf(stderr, "turn = %d, unitId = %d mode = %d\n", turn, unit->id, unit->mode);
+        fprintf(stderr, "turn = %d, unitId = %d mode = %d, type = %d\n", turn, unit->id, unit->mode, unit->type);
 
         for(int operation = 0; operation < OPERATION_MAX; operation++){
 
@@ -957,12 +1106,14 @@ class Codevs{
             Operation ope;
             ope.unitId = unit->id;
             ope.operation = operation;
-            ope.evaluation = calcEvaluation(unit);
+            ope.evaluation = calcEvaluation(unit, operation);
+
+            if(unit->mode == SEARCH && operation == NO_MOVE) ope.evaluation -= 10000;
 
             /*
-            fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
-            fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
-            */
+               fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
+               fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
+               */
             // 行動を元に戻す
             rollbackAction(unit, operation);
 
@@ -1305,6 +1456,7 @@ class CodevsTest{
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenMembers.size() != 0) return false;
     if(node.seenCount != 0) return false;
+    if(node.stamp != 0) return false;
     if(node.resource) return false;
     if(node.rockon) return false;
     if(node.searched) return false;
@@ -1324,6 +1476,7 @@ class CodevsTest{
     if(unitList[unitId].hp != 1980) return false;
     if(unitList[unitId].mode != NONE) return false;
     if(!unitList[unitId].movable) return false;
+    if(!unitIdCheckList[unitId]) return false;
     if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.field[10][10].seenMembers.size() != 1) return false;
 
@@ -1517,10 +1670,10 @@ class CodevsTest{
 
     cv.unitAction(&unitList[unitId], MOVE_DOWN, REAL);
     /*
-    fprintf(stderr,"searchedNodeCount = %d\n", gameStage.searchedNodeCount);
-    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
-    fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
-    */
+       fprintf(stderr,"searchedNodeCount = %d\n", gameStage.searchedNodeCount);
+       fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
+       fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
+       */
 
     unitId = 101;
     cv.addUnit(unitId,  10, 10, 1980, WORKER);
