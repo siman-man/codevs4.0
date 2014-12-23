@@ -53,8 +53,12 @@ const int OPERATION_MAX = 12;   // 行動の種類
 const int UNIT_MAX = 7;         // ユニットの種類
 const int COST_MAX = 99999;     // コストの最大値(城を事実上作れなくする)
 
+// 座標計算で使用する配列
 const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
+
+// その他
+const int UNKNOWN = -1;
 
 // 各ユニットへの命令
 const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
@@ -153,6 +157,10 @@ int myAllUnitCount;           // 自軍のユニット数
 int enemyAllUnitCount;        // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
+int myCastelCoordY;           // 自軍の城のy座標
+int myCastelCoordX;           // 自軍の城のx座標
+int enemyCastelCoordY;        // 敵軍の城のy座標
+int enemyCastelCoordX;        // 敵軍の城のx座標
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
 set<short> myActiveUnitList;  // 生存している自軍のユニットIDリスト
 
@@ -222,6 +230,14 @@ class Codevs{
           gameStage.field[y][x] = createNode();
         }
       }
+
+      // 自軍の城の座標をリセット
+      myCastelCoordY = UNKNOWN;
+      myCastelCoordX = UNKNOWN;
+
+      // 敵軍の城の座標をリセット
+      enemyCastelCoordY = UNKNOWN;
+      enemyCastelCoordX = UNKNOWN;
     }
 
     /*
@@ -260,6 +276,12 @@ class Codevs{
       for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
+        // 自軍の城の座標を更新
+        if(unitType == CASTEL){
+          myCastelCoordY = y;
+          myCastelCoordX = x;
+        }
+
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
           addUnit(unitId, y, x, hp, unitType);
@@ -274,6 +296,12 @@ class Codevs{
       // 敵軍ユニットの詳細
       for(int i = 0; i < enemyAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
+
+        // 敵軍の城の座標を更新
+        if(unitType == CASTEL){
+          enemyCastelCoordY = y;
+          enemyCastelCoordX = x;
+        }
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
@@ -297,6 +325,11 @@ class Codevs{
 
     /*
      * ユニットの追加を行う
+     *   unitId: ユニットID
+     *        y: y座標
+     *        x: x座標
+     *       hp: HP
+     * unitType: ユニットの種類
      */
     void addUnit(int unitId, int y, int x, int hp, int unitType){
       Unit unit;
@@ -342,6 +375,9 @@ class Codevs{
 
     /*
      * ユニットの削除を行う
+     *        y: y座標
+     *        x: x座標
+     * unitType: ユニットの種類
      */
     void deleteUnit(int y, int x, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] -= 1;
@@ -382,6 +418,15 @@ class Codevs{
 
         it++;
       }
+    }
+
+    /*
+     * 評価値の計算
+     */
+    int calcEvaluation(int unitId){
+      Unit *unit = &unitList[unitId];
+
+      return 0;
     }
 
     /*
@@ -607,15 +652,23 @@ class Codevs{
 
         fprintf(stderr, "unitId = %d\n", unit->id);
 
-        for(int i = 0; i < OPERATION_MAX; i++){
+        for(int operation = 0; operation < OPERATION_MAX; operation++){
+          if(!OPERATION_LIST[unit->type][operation]) continue;
+
           Operation ope;
           ope.unitId = unit->id;
-          ope.operation = instruction[MOVE_RIGHT];
+          ope.operation = instruction[operation];
+          ope.evaluation = calcEvaluation(unit->id);
 
           que.push(ope);
         }
 
-        operationList.push_back(que.top());
+        Operation bestOperation = que.top();
+
+        // 行動なし以外はリストに入れる
+        if(bestOperation.operation != instruction[NONE]){
+          operationList.push_back(bestOperation);
+        }
 
         it++;
       }
@@ -729,14 +782,13 @@ class CodevsTest{
    * ステージの初期化が成功しているかどうかの確認
    */
   bool testCase2(){
-    unitIdCheckList.clear();
-
-    unitIdCheckList[1] = true;
-    if(unitIdCheckList.size() != 1) return false;
-    cv.stageInitialize();
-    if(unitIdCheckList.size() != 0) return false;
-    if(myActiveUnitList.size() != 0) return false;
-    if(gameStage.openNodeCount != 0) return false;
+    if(stageNumber != 0) return false;
+    if(turn != 27) return false;
+    if(myResourceCount != 29) return false;
+    if(myAllUnitCount != 13) return false;
+    if(enemyAllUnitCount != 0) return false;
+    if(resourceCount != 1) return false;
+    if(myCastelCoordY != 7 || myCastelCoordX != 16) return false;
 
     return true;
   }
@@ -745,12 +797,14 @@ class CodevsTest{
    * サンプル入力がしっかりと取れているかどうか
    */
   bool testCase3(){
-    if(stageNumber != 0) return false;
-    if(turn != 27) return false;
-    if(myResourceCount != 29) return false;
-    if(myAllUnitCount != 13) return false;
-    if(enemyAllUnitCount != 0) return false;
-    if(resourceCount != 1) return false;
+    unitIdCheckList.clear();
+
+    unitIdCheckList[1] = true;
+    if(unitIdCheckList.size() != 1) return false;
+    cv.stageInitialize();
+    if(unitIdCheckList.size() != 0) return false;
+    if(myActiveUnitList.size() != 0) return false;
+    if(gameStage.openNodeCount != 0) return false;
 
     return true;
   }
