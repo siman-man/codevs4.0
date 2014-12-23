@@ -363,7 +363,7 @@ class Codevs{
 
       unitList[unitId] = unit;
       myActiveUnitList.insert(unitId);
-      openNode(unitId, y, x, unit.eyeRange, REAL);
+      checkNode(unitId, y, x, unit.eyeRange);
     }
 
     /*
@@ -420,7 +420,7 @@ class Codevs{
       unit->hp        = hp;
       unit->timestamp = turn;
 
-      openNode(unitId, y, x, unit->eyeRange, REAL);
+      checkNode(unitId, y, x, unit->eyeRange);
     }
 
     /*
@@ -492,7 +492,7 @@ class Codevs{
 
       switch(unit->mode){
         case SEARCH:
-          return -2 * centerDist + 2 * sumDist + 20 * gameStage.visibleNodeCount + 100 * myResourceCount;
+          return -2 * centerDist + sumDist + gameStage.visibleNodeCount + 20 * gameStage.openedNodeCount + 100 * myResourceCount;
           break;
         case PICKING:
           return 0;
@@ -546,6 +546,17 @@ class Codevs{
     }
 
     /*
+     * seenCountの初期化を行う
+     */
+    void cleanField(){
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          gameStage.field[y][x].seenCount = 0;
+        }
+      }
+    }
+
+    /*
      * ゲームの実行
      */
     void run(){
@@ -554,6 +565,9 @@ class Codevs{
       // 残り時間(ms)が取得出来なくなるまで回し続ける
       while(cin >> remainingTime){
         fprintf(stderr, "Remaing time is %dms\n", remainingTime);
+
+        // フィールドのクリア
+        cleanField();
 
         // 各ターンで行う処理(主に入力の処理)
         eachTurnProc();
@@ -578,6 +592,7 @@ class Codevs{
     void finalOperation(vector<Operation> &operationList){
       int size = operationList.size();
       fprintf(stderr,"finalOperation: size = %d\n", size);
+      fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
 
       printf("%d\n", size);
       for(int i = 0; i < size; i++){
@@ -587,31 +602,47 @@ class Codevs{
     }
 
     /*
-     * 視界をオープンする
+     * 視界をチェックする
      */
-    void openNode(int unitId, int ypos, int xpos, int eyeRange, bool real = false){
+    void checkNode(int unitId, int ypos, int xpos, int eyeRange){
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
         for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
           if(isWall(y,x)) continue;
 
-          if(real){
-            gameStage.field[y][x].seenMembers.insert(unitId);
-          }
-
+          gameStage.field[y][x].seenMembers.insert(unitId);
           gameStage.field[y][x].seenCount += 1;
-          bool opened = (gameStage.field[y][x].seenCount > 0);
 
-          if(real && !gameStage.field[y][x].searched){
+          if(!gameStage.field[y][x].searched){
             gameStage.searchedNodeCount += 1;
             gameStage.field[y][x].searched = true;
           }
 
-          gameStage.openedNodeCount += (!gameStage.field[y][x].searched && opened);
-          gameStage.visibleNodeCount += gameStage.field[y][x].opened ^ opened;
+          if(!gameStage.field[y][x].opened){
+            gameStage.visibleNodeCount += 1;
+            gameStage.field[y][x].opened = true;
+          }
+        }
+      }
+    }
 
-          gameStage.field[y][x].opened = opened;
+    /*
+     * 視界をオープンする
+     */
+    void openNode(int unitId, int ypos, int xpos, int eyeRange){
+      for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
+        int diff = 2*abs(ypos-y)/2;
+
+        for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
+          if(isWall(y,x)) continue;
+
+          gameStage.field[y][x].seenCount += 1;
+
+          gameStage.openedNodeCount += !gameStage.field[y][x].searched;
+          gameStage.visibleNodeCount += !gameStage.field[y][x].opened;
+
+          gameStage.field[y][x].opened = true;
         }
       }
     }
@@ -629,6 +660,7 @@ class Codevs{
 
           bool opened = (gameStage.field[y][x].seenCount > 0);
 
+          gameStage.openedNodeCount -= !gameStage.field[y][x].searched;
           gameStage.visibleNodeCount -= gameStage.field[y][x].opened ^ opened;
           gameStage.field[y][x].opened = opened;
         }
@@ -640,13 +672,17 @@ class Codevs{
      * ユニットが行動を起こす
      * 行動が成功した場合はtrue、失敗した場合は場合はfalseを返す
      */
-    bool unitAction(Unit *unit, int type){
+    bool unitAction(Unit *unit, int type, bool final = false){
       switch(type){
         case MOVE_UP:
           if(canMove(unit->y, unit->x, MOVE_UP)){
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveUp(unit);
-            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            if(final){
+              checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }else{
+              openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }
           }else{
             return false;
           }
@@ -655,7 +691,11 @@ class Codevs{
           if(canMove(unit->y, unit->x, MOVE_DOWN)){
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveDown(unit);
-            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            if(final){
+              checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }else{
+              openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }
           }else{
             return false;
           }
@@ -664,7 +704,11 @@ class Codevs{
           if(canMove(unit->y, unit->x, MOVE_LEFT)){
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveLeft(unit);
-            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            if(final){
+              checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }else{
+              openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }
           }else{
             return false;
           }
@@ -674,6 +718,11 @@ class Codevs{
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveRight(unit);
             openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            if(final){
+              checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }else{
+              openNode(unit->id, unit->y, unit->x, unit->eyeRange);
+            }
           }else{
             return false;
           }
@@ -1380,10 +1429,24 @@ class CodevsTest{
     if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.openedNodeCount != 9) return false;
 
+    cv.rollbackAction(&unitList[unitId], MOVE_DOWN);
+    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.visibleNodeCount != 41) return false;
+    if(gameStage.openedNodeCount != 0) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_DOWN, REAL);
+    /*
+    fprintf(stderr,"searchedNodeCount = %d\n", gameStage.searchedNodeCount);
+    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
+    fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
+    */
+
     unitId = 101;
     cv.addUnit(unitId,  10, 10, 1980, WORKER);
+
+    cv.unitAction(&unitList[unitId], MOVE_LEFT);
     if(gameStage.visibleNodeCount != 50) return false;
-    if(gameStage.openedNodeCount != 9) return false;
+    if(gameStage.openedNodeCount != 5) return false;
 
     return true;
   }
