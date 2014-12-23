@@ -38,7 +38,7 @@ const int CREATE_KNIGHT   =  6; // ナイトを生産
 const int CREATE_FIGHER   =  7; // ファイターを生産
 const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_VILLAGE  =  9; // 村を生産
-const int CREATE_BASE     = 10; // 拠点
+const int CREATE_BASE     = 10; // 拠点を生産
 
 // ユニットの行動タイプ
 const int NONE    = 0;  // 何もしない(何も出来ない)
@@ -55,6 +55,8 @@ const int COST_MAX = 99999;     // コストの最大値(城を事実上作れ�
 const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
 
+// 各ユニットへの命令
+const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','5','6'};
 // 各ユニットの生産にかかるコスト(上の「行動一覧」と一致させておく)
 const int unitCost[OPERATION_MAX] = {40, 20, 40, 60, COST_MAX, 100, 500};
 // 各ユニットのHP
@@ -99,10 +101,10 @@ const bool OPERATION_LIST[7][12] = {
   /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false, false}
 };
 
-//
+// ユニットへの指示
 struct Operation{
-  short unitId;
-  char operation;
+  short unitId;     // ユニットID
+  char operation;   // 命令のリスト
 };
 
 // ユニットが持つ属性
@@ -299,6 +301,7 @@ class Codevs{
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
+      unit.mode         = NONE;
       unit.timestamp    = turn;
 
       unitList[unitId] = unit;
@@ -344,6 +347,8 @@ class Codevs{
 
     /*
      * 自軍の生存確認
+     * ユニットのtimestampが更新されていない場合は前のターンで的に倒されたので、
+     * リストから排除する。
      */
     void unitSurvivalCheck(){
       set<short> tempList = myActiveUnitList;
@@ -373,22 +378,36 @@ class Codevs{
         // 各ターンで行う処理(主に入力の処理)
         eachTurnProc();
 
+        // 自軍の生存確認
+        unitSurvivalCheck();
+
+        // 行動フェーズ
+        vector<Operation> operationList = actionPhase();
+
         // 最終的な出力
-        finalOperation();
+        finalOperation(operationList);
       }
     }
 
     /*
      * 最終指示(このターンの最終的な行動を出力)
      */
-    void finalOperation(){
-      printf("0\n");
+    void finalOperation(vector<Operation> &operationList){
+      int size = operationList.size();
+
+      printf("%d\n", size);
+      for(int i = 0; i < size; i++){
+        Operation ope = operationList[i];
+        printf("%d %c\n", ope.unitId, ope.operation);
+      }
     }
 
     /*
      * ユニットに対して指示を出す
      */
     void operation(int unitId, int type){
+      Unit *unit = &unitList[unitId];
+
       switch(type){
         case MOVE_UP:
           moveUp(unitId);
@@ -403,17 +422,22 @@ class Codevs{
           moveRight(unitId);
           break;
         case CREATE_WORKER:
-          createWorker(unitId);
+          createUnit(unit->y, unit->x, WORKER);
           break;
         case CREATE_KNIGHT:
+          createUnit(unit->y, unit->x, KNIGHT);
           break;
         case CREATE_FIGHER:
+          createUnit(unit->y, unit->x, FIGHER);
           break;
         case CREATE_ASSASIN:
+          createUnit(unit->y, unit->x, ASSASIN);
           break;
         case CREATE_VILLAGE:
+          createUnit(unit->y, unit->x, VILLAGE);
           break;
         case CREATE_BASE:
+          createUnit(unit->y, unit->x, BASE);
           break;
         default:
           noMove();
@@ -463,8 +487,28 @@ class Codevs{
 
     /*
      * 行動フェーズ
+     * 自軍に対して各種行動を選択する
      */
-    void move(){
+    vector<Operation> actionPhase(){
+      set<short>::iterator it = myActiveUnitList.begin();
+      vector<Operation> operationList;
+
+      // 各ユニット毎に処理を行う
+      while(it != myActiveUnitList.end()){
+        Unit *unit = &unitList[*it];
+
+        fprintf(stderr, "unitId = %d\n", unit->id);
+
+        Operation ope;
+        ope.unitId = unit->id;
+        ope.operation = instruction[MOVE_RIGHT];
+
+        operationList.push_back(ope);
+
+        it++;
+      }
+
+      return operationList;
     }
 
     /*
@@ -538,7 +582,7 @@ class CodevsTest{
   Codevs cv;
 
   public:
-  void testRun(){
+  void runTest(){
     fprintf(stderr, "TestCase1:\t%s\n", testCase1()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase2:\t%s\n", testCase2()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase3:\t%s\n", testCase3()? "SUCCESS!" : "FAILED!");
@@ -770,6 +814,7 @@ class CodevsTest{
     cv.addUnit(unitId, 10, 10, 1980, WORKER);
     if(unitList[unitId].type != WORKER) return false;
     if(unitList[unitId].hp != 1980) return false;
+    if(unitList[unitId].mode != NONE) return false;
     if(!unitList[unitId].movable) return false;
 
     unitId = 101;
@@ -816,7 +861,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  cvt.testRun();
+  //cvt.runTest();
 
   return 0;
 }
