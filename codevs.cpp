@@ -47,6 +47,7 @@ const int SEARCH  = 1;  // 探索(空いてないマスを探索)
 const int DESTROY = 2;  // 破壊(敵を見つけて破壊)
 const int PICKING = 3;  // 資源採取
 const int ONRUSH  = 4;  // 突撃(敵の城が見つかり倒しに行く状態)
+const int STAY    = 5;  // 待機命令
 
 // 各種最大値
 const int OPERATION_MAX = 12;   // 行動の種類
@@ -120,24 +121,21 @@ struct Operation{
 // ユニットが持つ属性
 struct Unit{
   short id;           // ユニットのID
-  char  mode;         // ユニットの状態
-  char  y;            // y座標
-  char  x;            // x座標
+  short mode;         // ユニットの状態
+  short y;            // y座標
+  short x;            // x座標
   int   hp;           // HP
-  char  type;         // ユニットの種別
-  char  eyeRange;     // 視野
-  char  attackRange;  // 攻撃範囲
+  short type;         // ユニットの種別
+  short eyeRange;     // 視野
+  short attackRange;  // 攻撃範囲
   bool  movable;      // 移動できるかどうか
   short timestamp;    // 更新ターン
-
-  int calcEvaluation(){
-    return 0;
-  }
 };
 
 // フィールドの1マスに対応する
 struct Node{
   bool opened;            // 一度調査したことがあるかどうか
+  bool resource;          // 資源マスかどうか
   char myUnitCount[7];    // 自軍の各ユニット数
   char enemyUnitCount[7]; // 相手の各ユニット数
   short seenCount;        // 自軍のユニットがノードを監視している数
@@ -286,7 +284,7 @@ class Codevs{
         if(!unitIdCheckList[unitId]){
           addUnit(unitId, y, x, hp, unitType);
         }else{
-          updateUnit(unitId, y, x, hp);
+          updateUnitStatus(unitId, y, x, hp);
         }
       }
 
@@ -307,7 +305,7 @@ class Codevs{
         if(!unitIdCheckList[unitId]){
           addUnit(unitId, y, x, hp, unitType);
         }else{
-          updateUnit(unitId, y, x, hp);
+          updateUnitStatus(unitId, y, x, hp);
         }
       }
 
@@ -317,6 +315,8 @@ class Codevs{
       // 資源マスの詳細
       for(int i = 0; i < resourceCount; i++){
         scanf("%d %d", &y, &x);
+
+        gameStage.field[y][x].resource = true;
       }
 
       // 終端文字列
@@ -386,19 +386,59 @@ class Codevs{
     }
 
     /*
-     * ユニットの更新を行う(座標と残りHP)
+     * ユニットの状態の更新を行う(座標と残りHP)
      * unitId: ユニットのID
      *      y: y座標
      *      x: x座標
      *     hp: HP
      */
-    void updateUnit(int unitId, int y, int x, int hp){
+    void updateUnitStatus(int unitId, int y, int x, int hp){
       Unit *unit = &unitList[unitId];
       unit->y         = y;
       unit->x         = x;
       unit->hp        = hp;
       unit->timestamp = turn;
     }
+
+    /*
+     * ユニットのモードの状態の更新を行う
+     */
+    void updateUnitMode(){
+      set<short>::iterator it = myActiveUnitList.begin();
+
+      while(it != myActiveUnitList.end()){
+        Unit *unit = &unitList[*it];
+        unit->mode = directUnitMode(unit);
+        it++;
+      }
+    }
+
+    /*
+     * ユニットの状態を決定する
+     */
+    int directUnitMode(Unit *unit){
+      int y = unit->y;
+      int x = unit->x;
+
+      switch(unit->type){
+        case WORKER:
+          if(gameStage.field[y][x].resource){
+            return PICKING;
+          }else{
+            return SEARCH;
+          }
+          break;
+        case KNIGHT:
+          break;
+        case FIGHER:
+          break;
+        case ASSASIN:
+          break;
+        default:
+          return NONE;
+      }
+    }
+
 
     /*
      * 自軍の生存確認
@@ -423,8 +463,17 @@ class Codevs{
     /*
      * 評価値の計算
      */
-    int calcEvaluation(int unitId){
-      Unit *unit = &unitList[unitId];
+    int calcEvaluation(Unit *unit){
+      switch(unit->mode){
+        case SEARCH:
+          return calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
+          break;
+        case PICKING:
+          return 0;
+          break;
+        default:
+          break;
+      }
 
       return 0;
     }
@@ -444,6 +493,9 @@ class Codevs{
 
         // 自軍の生存確認
         unitSurvivalCheck();
+
+        // 自軍の各ユニットのモード変更を行う
+        updateUnitMode();
 
         // 行動フェーズ
         vector<Operation> operationList = actionPhase();
@@ -512,21 +564,19 @@ class Codevs{
     /*
      * ユニットが行動を起こす
      */
-    void unitAction(int unitId, int type){
-      Unit *unit = &unitList[unitId];
-
+    void unitAction(Unit *unit, int type){
       switch(type){
         case MOVE_UP:
-          moveUp(unitId);
+          moveUp(unit->id);
           break;
         case MOVE_DOWN:
-          moveDown(unitId);
+          moveDown(unit->id);
           break;
         case MOVE_LEFT:
-          moveLeft(unitId);
+          moveLeft(unit->id);
           break;
         case MOVE_RIGHT:
-          moveRight(unitId);
+          moveRight(unit->id);
           break;
         case CREATE_WORKER:
           createUnit(unit->y, unit->x, WORKER);
@@ -557,9 +607,7 @@ class Codevs{
      * unitId: ユニットID
      *   type: アクションの種類
      */
-    void rollbackAction(int unitId, int type){
-      Unit *unit = &unitList[unitId];
-
+    void rollbackAction(Unit *unit, int type){
       switch(type){
         case MOVE_UP:
           moveDown(unit->id);
@@ -574,22 +622,22 @@ class Codevs{
           moveLeft(unit->id);
           break;
         case CREATE_WORKER:
-          createUnit(unit->y, unit->x, WORKER);
+          deleteUnit(unit->y, unit->x, WORKER);
           break;
         case CREATE_KNIGHT:
-          createUnit(unit->y, unit->x, KNIGHT);
+          deleteUnit(unit->y, unit->x, KNIGHT);
           break;
         case CREATE_FIGHER:
-          createUnit(unit->y, unit->x, FIGHER);
+          deleteUnit(unit->y, unit->x, FIGHER);
           break;
         case CREATE_ASSASIN:
-          createUnit(unit->y, unit->x, ASSASIN);
+          deleteUnit(unit->y, unit->x, ASSASIN);
           break;
         case CREATE_VILLAGE:
-          createUnit(unit->y, unit->x, VILLAGE);
+          deleteUnit(unit->y, unit->x, VILLAGE);
           break;
         case CREATE_BASE:
-          createUnit(unit->y, unit->x, BASE);
+          deleteUnit(unit->y, unit->x, BASE);
           break;
         default:
           noMove();
@@ -655,10 +703,14 @@ class Codevs{
         for(int operation = 0; operation < OPERATION_MAX; operation++){
           if(!OPERATION_LIST[unit->type][operation]) continue;
 
+          unitAction(unit, operation);
+
           Operation ope;
           ope.unitId = unit->id;
           ope.operation = instruction[operation];
-          ope.evaluation = calcEvaluation(unit->id);
+          ope.evaluation = calcEvaluation(unit);
+
+          rollbackAction(unit, operation);
 
           que.push(ope);
         }
@@ -976,6 +1028,7 @@ class CodevsTest{
     if(node.enemyUnitCount[WORKER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenCount != 0) return false;
+    if(node.resource) return false;
 
     return true;
   }
