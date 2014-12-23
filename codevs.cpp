@@ -233,6 +233,9 @@ class Codevs{
       // 確保している視界の数の初期化
       gameStage.visibleNodeCount = 0;
 
+      // 調査予定のノード数の初期化
+      gameStage.openedNodeCount = 0;
+
       // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
@@ -259,6 +262,9 @@ class Codevs{
       int hp;       // HP
       int unitType; // ユニットの種類
       string str;   // 終端文字列「END」を格納するだけの変数
+
+      // 調査予定のノード数をリセット
+      gameStage.openedNodeCount = 0;
 
       // 現在のステージ数(0-index)
       scanf("%d", &stageNumber);
@@ -371,6 +377,7 @@ class Codevs{
       node.resource = false;
       node.opened = false;
       node.rockon = false;
+      node.searched = false;
 
       return node;
     }
@@ -485,7 +492,7 @@ class Codevs{
 
       switch(unit->mode){
         case SEARCH:
-          return -2 * centerDist + 2 * sumDist + 20 * gameStage.searchedNodeCount + 100 * myResourceCount;
+          return -2 * centerDist + 2 * sumDist + 20 * gameStage.visibleNodeCount + 100 * myResourceCount;
           break;
         case PICKING:
           return 0;
@@ -596,18 +603,15 @@ class Codevs{
           gameStage.field[y][x].seenCount += 1;
           bool opened = (gameStage.field[y][x].seenCount > 0);
 
-          //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
-
-          if(real){
-            gameStage.searchedNodeCount += gameStage.field[y][x].opened ^ opened;
+          if(real && !gameStage.field[y][x].searched){
+            gameStage.searchedNodeCount += 1;
+            gameStage.field[y][x].searched = true;
           }
+
+          gameStage.openedNodeCount += (!gameStage.field[y][x].searched && opened);
           gameStage.visibleNodeCount += gameStage.field[y][x].opened ^ opened;
 
           gameStage.field[y][x].opened = opened;
-
-          if(real && opened){
-            gameStage.field[y][x].searched = true;
-          }
         }
       }
     }
@@ -624,8 +628,6 @@ class Codevs{
           gameStage.field[y][x].seenCount -= 1;
 
           bool opened = (gameStage.field[y][x].seenCount > 0);
-
-          //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
 
           gameStage.visibleNodeCount -= gameStage.field[y][x].opened ^ opened;
           gameStage.field[y][x].opened = opened;
@@ -651,6 +653,7 @@ class Codevs{
           break;
         case MOVE_DOWN:
           if(canMove(unit->y, unit->x, MOVE_DOWN)){
+            closeNode(unit->y, unit->x, unit->eyeRange);
             moveDown(unit);
             openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
@@ -659,6 +662,7 @@ class Codevs{
           break;
         case MOVE_LEFT:
           if(canMove(unit->y, unit->x, MOVE_LEFT)){
+            closeNode(unit->y, unit->x, unit->eyeRange);
             moveLeft(unit);
             openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
@@ -667,6 +671,7 @@ class Codevs{
           break;
         case MOVE_RIGHT:
           if(canMove(unit->y, unit->x, MOVE_RIGHT)){
+            closeNode(unit->y, unit->x, unit->eyeRange);
             moveRight(unit);
             openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
@@ -954,6 +959,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase18:\t%s\n", testCase18()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase19:\t%s\n", testCase19()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase20:\t%s\n", testCase20()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase21:\t%s\n", testCase21()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -997,6 +1003,7 @@ class CodevsTest{
     if(myActiveUnitList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.visibleNodeCount != 0) return false;
+    if(gameStage.openedNodeCount != 0) return false;
 
     return true;
   }
@@ -1171,6 +1178,7 @@ class CodevsTest{
     if(node.seenCount != 0) return false;
     if(node.resource) return false;
     if(node.rockon) return false;
+    if(node.searched) return false;
 
     return true;
   }
@@ -1350,6 +1358,32 @@ class CodevsTest{
 
     cv.unitAction(&unitList[unitId], MOVE_UP);
     if(gameStage.searchedNodeCount != 41) return false;
+
+    return true;
+  }
+
+  /*
+   * Case21: 調査予定のマスの数が取得出来ているかどうか
+   */
+  bool testCase21(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.visibleNodeCount != 41) return false;
+    if(gameStage.openedNodeCount != 0) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_DOWN);
+    if(gameStage.visibleNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.openedNodeCount != 9) return false;
+
+    unitId = 101;
+    cv.addUnit(unitId,  10, 10, 1980, WORKER);
+    if(gameStage.visibleNodeCount != 50) return false;
+    if(gameStage.openedNodeCount != 9) return false;
 
     return true;
   }
