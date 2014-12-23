@@ -141,6 +141,7 @@ struct Node{
   bool opened;              // 調査予定マス
   bool searched;            // 既に調査済みかどうか
   bool rockon;              // ノードを狙っている自軍がいるかどうか
+  short cost;               // ノードのコスト
   short seenCount;          // ノードを監視しているユニットの数 
   short myUnitCount[7];     // 自軍の各ユニット数
   short enemyUnitCount[7];  // 相手の各ユニット数
@@ -153,6 +154,17 @@ struct GameStage{
   short openedNodeCount;      // 調査予定マスの数
   short visibleNodeCount;         // 現在確保できている視界の数   
   Node field[HEIGHT][WIDTH];  // ゲームフィールド
+};
+
+// 座標を表す
+struct Coord{
+  int y;
+  int x;
+
+  Coord(int ypos = -1, int xpos = -1){
+    y = ypos;
+    x = xpos;
+  }
 };
 
 int remainingTime;            // 残り時間
@@ -174,7 +186,8 @@ bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフ�
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
-GameStage gameStage;  // ゲームフィールド
+GameStage gameStage;      // ゲームフィールド
+GameStage tempGameStage;  // 一時的なゲーム・フィールド
 
 class Codevs{
   public:
@@ -488,12 +501,12 @@ class Codevs{
      */
     int calcEvaluation(Unit *unit){
       int castelDist = calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
-      int centerDist = calcDist(unit->y, unit->x, 50, 50);
+      int centerDist = calcDist(unit->y, unit->x, 30, 30);
       int sumDist = aroundMyUnitDist(unit);
 
       switch(unit->mode){
         case SEARCH:
-          return -2 * centerDist + 10 * gameStage.openedNodeCount + 100 * myResourceCount;
+          return -centerDist + 2 * sumDist + 10 * gameStage.openedNodeCount + 100 * myResourceCount;
           break;
         case PICKING:
           return 0;
@@ -530,6 +543,47 @@ class Codevs{
     }
 
     /*
+     * コストを付ける
+     */
+    void checkCost(int ypos, int xpos){
+      int cost = 10;
+      map<int, bool> checkList;
+      typedef pair<Coord, int> cell;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), cost));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int cost = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || cost <= 0) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        gameStage.field[coord.y][coord.x].cost += cost;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), cost-1));
+        }
+      }
+    }
+
+    /*
+     * 未知の探索部分についてコストを計算
+     */
+    void unknownNode(){
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          if(!gameStage.field[y][x].searched){
+            checkCost(y,x);
+          }
+        }
+      }
+    }
+
+    /*
      * 現在確保出来ている視界の数を調べる
      */
     int checkVisibleCount(){
@@ -547,12 +601,13 @@ class Codevs{
     }
 
     /*
-     * seenCountの初期化を行う
+     * fieldの初期化を行う
      */
     void cleanField(){
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
           gameStage.field[y][x].seenCount = 0;
+          gameStage.field[y][x].cost = 0;
         }
       }
     }
@@ -569,6 +624,9 @@ class Codevs{
 
         // フィールドのクリア
         cleanField();
+
+        // コストをつける
+        unknownNode();
 
         // 各ターンで行う処理(主に入力の処理)
         eachTurnProc();
@@ -881,12 +939,14 @@ class Codevs{
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
+        tempGameStage = gameStage;
 
         fprintf(stderr, "turn = %d, unitId = %d mode = %d\n", turn, unit->id, unit->mode);
 
         for(int operation = 0; operation < OPERATION_MAX; operation++){
+
           if(!OPERATION_LIST[unit->type][operation]) continue;
-          fprintf(stderr,"operation = %d\n", operation);
+          //fprintf(stderr,"operation = %d\n", operation);
           int onc = gameStage.openedNodeCount;
           int snc = gameStage.searchedNodeCount;
           int vnc = gameStage.visibleNodeCount;
@@ -899,18 +959,21 @@ class Codevs{
             ope.operation = operation;
             ope.evaluation = calcEvaluation(unit);
 
+            /*
             fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
             fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
+            */
             // 行動を元に戻す
             rollbackAction(unit, operation);
 
             que.push(ope);
           }else{
-            fprintf(stderr,"Failed operation = %d\n", operation);
+            //fprintf(stderr,"Failed operation = %d\n", operation);
           }
 
+          gameStage = tempGameStage;
           // 元に戻っていない場合はエラー
-          fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
+          //fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
           assert(snc == gameStage.searchedNodeCount);
           assert(vnc == gameStage.visibleNodeCount);
           assert(onc == gameStage.openedNodeCount);
@@ -923,7 +986,7 @@ class Codevs{
           operationList.push_back(bestOperation);
 
           // 確定した行動はそのままにする
-          unitAction(unit, bestOperation.operation);
+          unitAction(unit, bestOperation.operation, REAL);
         }
 
         it++;
