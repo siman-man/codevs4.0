@@ -60,6 +60,8 @@ const int dx[5] = {0, 0, 0,-1, 1};
 
 // その他
 const int UNKNOWN = -1;
+const int VIRTUAL_ID = 30000; // 仮想ID 
+const int REAL = true;        // 確定コマンド
 
 // 各ユニットへの命令
 const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
@@ -134,17 +136,21 @@ struct Unit{
 
 // フィールドの1マスに対応する
 struct Node{
-  bool opened;            // 一度調査したことがあるかどうか
-  bool resource;          // 資源マスかどうか
-  char myUnitCount[7];    // 自軍の各ユニット数
-  char enemyUnitCount[7]; // 相手の各ユニット数
-  short seenCount;        // 自軍のユニットがノードを監視している数
+  bool resource;            // 資源マスかどうか
+  bool opened;              // 一度調査したことがあるかどうか
+  bool searched;            // 既に調査済みかどうか
+  bool rockon;              // ノードを狙っている自軍がいるかどうか
+  short seenCount;          // ノードを監視しているユニットの数 
+  short myUnitCount[7];     // 自軍の各ユニット数
+  short enemyUnitCount[7];  // 相手の各ユニット数
+  set<short> seenMembers;   // ノードを監視している自軍のメンバー
 };
 
 // ゲーム・フィールド全体の構造
 struct GameStage{
-  short openNodeCount;
-  Node field[HEIGHT][WIDTH];        // ゲームフィールド
+  short searchedNodeCount;        // 調査済みのマスの数
+  short visibleCount;         // 現在確保できている視界の数   
+  Node field[HEIGHT][WIDTH];  // ゲームフィールド
 };
 
 int remainingTime;            // 残り時間
@@ -221,7 +227,7 @@ class Codevs{
       myActiveUnitList.clear();
 
       // 探索が完了したマスの初期化
-      gameStage.openNodeCount = 0;
+      gameStage.searchedNodeCount = 0;
 
       // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
@@ -347,7 +353,7 @@ class Codevs{
 
       unitList[unitId] = unit;
       myActiveUnitList.insert(unitId);
-      openNode(y, x, unit.eyeRange);
+      openNode(unitId, y, x, unit.eyeRange, REAL);
     }
 
     /*
@@ -358,7 +364,9 @@ class Codevs{
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       node.seenCount = 0;
+      node.resource = false;
       node.opened = false;
+      node.rockon = false;
 
       return node;
     }
@@ -372,7 +380,7 @@ class Codevs{
     void createUnit(int y, int x, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] += 1;
       myResourceCount -= unitCost[unitType];
-      openNode(y, x, unitEyeRange[unitType]);
+      openNode(VIRTUAL_ID, y, x, unitEyeRange[unitType]);
     }
 
     /*
@@ -384,7 +392,7 @@ class Codevs{
     void deleteUnit(int y, int x, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] -= 1;
       myResourceCount += unitCost[unitType];
-      closeNode(y, x, unitEyeRange[unitType]);
+      closeNode(VIRTUAL_ID, y, x, unitEyeRange[unitType]);
     }
 
     /*
@@ -401,7 +409,7 @@ class Codevs{
       unit->hp        = hp;
       unit->timestamp = turn;
 
-      openNode(y, x, unit->eyeRange);
+      openNode(unitId, y, x, unit->eyeRange, REAL);
     }
 
     /*
@@ -443,7 +451,6 @@ class Codevs{
       }
     }
 
-
     /*
      * 自軍の生存確認
      * ユニットのtimestampが更新されていない場合は前のターンで的に倒されたので、
@@ -474,7 +481,7 @@ class Codevs{
 
       switch(unit->mode){
         case SEARCH:
-          return castelDist - 10 * centerDist + sumDist;
+          return -2 * centerDist + 2 * sumDist + 20 * gameStage.searchedNodeCount + 100 * myResourceCount;
           break;
         case PICKING:
           return 0;
@@ -499,7 +506,7 @@ class Codevs{
         Unit *other = &unitList[*it];
 
         if(other->movable){
-          dist = calcDist(unit->y, unit->x, other->y, other->x);
+          dist = min(10, calcDist(unit->y, unit->x, other->y, other->x));
 
           sumDist += dist;
         }
@@ -508,6 +515,23 @@ class Codevs{
       }
       
       return sumDist;
+    }
+
+    /*
+     * 現在確保出来ている視界の数を調べる
+     */
+    int checkVisibleCount(){
+      int visibleCount = 0;
+
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          if(gameStage.field[y][x].seenCount > 0){
+            visibleCount += 1;
+          }
+        }
+      }
+
+      return visibleCount;
     }
 
     /*
@@ -554,20 +578,28 @@ class Codevs{
     /*
      * 視界をオープンする
      */
-    void openNode(int ypos, int xpos, int eyeRange){
+    void openNode(int unitId, int ypos, int xpos, int eyeRange, bool real = false){
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
         for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
           if(isWall(y,x)) continue;
 
-          gameStage.field[y][x].seenCount += 1;
-          bool opened = (gameStage.field[y][x].seenCount > 0);
+          if(real){
+            gameStage.field[y][x].seenMembers.insert(unitId);
+          }
+          bool opened = (gameStage.field[y][x].seenMembers.size() > 0);
 
           //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
 
-          gameStage.openNodeCount += gameStage.field[y][x].opened ^ opened;
+          if(real){
+            gameStage.searchedNodeCount += gameStage.field[y][x].opened ^ opened;
+          }
           gameStage.field[y][x].opened = opened;
+
+          if(real && opened){
+            gameStage.field[y][x].searched = true;
+          }
         }
       }
     }
@@ -575,19 +607,19 @@ class Codevs{
     /*
      * 視界をクローズする
      */
-    void closeNode(int ypos, int xpos, int eyeRange){
+    void closeNode(int unitId, int ypos, int xpos, int eyeRange){
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
         for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
           if(isWall(y,x)) continue;
 
-          gameStage.field[y][x].seenCount -= 1;
-          bool opened = (gameStage.field[y][x].seenCount > 0);
+          gameStage.field[y][x].seenMembers.erase(unitId);
+          bool opened = (gameStage.field[y][x].seenMembers.size() > 0);
 
           //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
 
-          gameStage.openNodeCount -= gameStage.field[y][x].opened ^ opened;
+          gameStage.searchedNodeCount -= gameStage.field[y][x].opened ^ opened;
           gameStage.field[y][x].opened = opened;
         }
       }
@@ -602,8 +634,9 @@ class Codevs{
       switch(type){
         case MOVE_UP:
           if(canMove(unit->y, unit->x, MOVE_UP)){
+            closeNode(unit->id, unit->y, unit->x, unit->eyeRange);
             moveUp(unit);
-            openNode(unit->y, unit->x, unit->eyeRange);
+            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
@@ -611,7 +644,7 @@ class Codevs{
         case MOVE_DOWN:
           if(canMove(unit->y, unit->x, MOVE_DOWN)){
             moveDown(unit);
-            openNode(unit->y, unit->x, unit->eyeRange);
+            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
@@ -619,7 +652,7 @@ class Codevs{
         case MOVE_LEFT:
           if(canMove(unit->y, unit->x, MOVE_LEFT)){
             moveLeft(unit);
-            openNode(unit->y, unit->x, unit->eyeRange);
+            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
@@ -627,7 +660,7 @@ class Codevs{
         case MOVE_RIGHT:
           if(canMove(unit->y, unit->x, MOVE_RIGHT)){
             moveRight(unit);
-            openNode(unit->y, unit->x, unit->eyeRange);
+            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
@@ -690,19 +723,19 @@ class Codevs{
     void rollbackAction(Unit *unit, int type){
       switch(type){
         case MOVE_UP:
-          closeNode(unit->y, unit->x, unit->eyeRange);
+          closeNode(unit->id, unit->y, unit->x, unit->eyeRange);
           moveDown(unit);
           break;
         case MOVE_DOWN:
-          closeNode(unit->y, unit->x, unit->eyeRange);
+          closeNode(unit->id, unit->y, unit->x, unit->eyeRange);
           moveUp(unit);
           break;
         case MOVE_LEFT:
-          closeNode(unit->y, unit->x, unit->eyeRange);
+          closeNode(unit->id, unit->y, unit->x, unit->eyeRange);
           moveRight(unit);
           break;
         case MOVE_RIGHT:
-          closeNode(unit->y, unit->x, unit->eyeRange);
+          closeNode(unit->id, unit->y, unit->x, unit->eyeRange);
           moveLeft(unit);
           break;
         case CREATE_WORKER:
@@ -906,6 +939,9 @@ class CodevsTest{
     fprintf(stderr, "TestCase15:\t%s\n", testCase15()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase16:\t%s\n", testCase16()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase17:\t%s\n", testCase17()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase18:\t%s\n", testCase18()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase19:\t%s\n", testCase19()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase20:\t%s\n", testCase20()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -947,7 +983,7 @@ class CodevsTest{
     cv.stageInitialize();
     if(unitIdCheckList.size() != 0) return false;
     if(myActiveUnitList.size() != 0) return false;
-    if(gameStage.openNodeCount != 0) return false;
+    if(gameStage.searchedNodeCount != 0) return false;
 
     return true;
   }
@@ -1086,13 +1122,13 @@ class CodevsTest{
     cv.createUnit(5,5,WORKER);
     if(myResourceCount != 0) return false;
     if(gameStage.field[5][5].myUnitCount[WORKER] != 1) return false;
-    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
 
     myResourceCount = 20;
     cv.createUnit(1,1,KNIGHT);
     if(myResourceCount != 0) return false;
     if(gameStage.field[1][1].myUnitCount[KNIGHT] != 1) return false;
-    if(gameStage.openNodeCount != 60) return false;
+    if(gameStage.searchedNodeCount != 60) return false;
 
     myResourceCount = 100;
     cv.createUnit(20,20,VILLAGE);
@@ -1118,8 +1154,10 @@ class CodevsTest{
     if(node.myUnitCount[BASE] != 0) return false;
     if(node.enemyUnitCount[WORKER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
+    if(node.seenMembers.size() != 0) return false;
     if(node.seenCount != 0) return false;
     if(node.resource) return false;
+    if(node.rockon) return false;
 
     return true;
   }
@@ -1136,14 +1174,15 @@ class CodevsTest{
     if(unitList[unitId].hp != 1980) return false;
     if(unitList[unitId].mode != NONE) return false;
     if(!unitList[unitId].movable) return false;
-    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.field[10][10].seenMembers.size() != 1) return false;
 
     unitId = 101;
     cv.addUnit(unitId, 50, 50, 20000, VILLAGE);
     if(unitList[unitId].type != VILLAGE) return false;
     if(unitList[unitId].hp != 20000) return false;
     if(unitList[unitId].movable) return false;
-    if(gameStage.openNodeCount != 262) return false;
+    if(gameStage.searchedNodeCount != 262) return false;
 
     unitId = 102;
     cv.addUnit(unitId, 30, 30, 20000, BASE);
@@ -1190,12 +1229,12 @@ class CodevsTest{
 
     cv.deleteUnit(1,1,WORKER);
     if(myResourceCount != 40) return false;
-    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.field[1][1].myUnitCount[WORKER] != 0) return false;
 
     cv.deleteUnit(5,5,WORKER);
     if(myResourceCount != 80) return false;
-    if(gameStage.openNodeCount != 0) return false;
+    if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.field[5][5].myUnitCount[WORKER] != 0) return false;
 
     return true;
@@ -1228,7 +1267,7 @@ class CodevsTest{
   }
 
   /*
-   * ロールバックが出来ているかどうか
+   * Case18: ロールバックが出来ているかどうか
    */
   bool testCase17(){
     cv.stageInitialize();
@@ -1239,13 +1278,65 @@ class CodevsTest{
     Unit *unit = &unitList[unitId];
     myResourceCount = COST_MAX;
 
-    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
 
     cv.unitAction(unit, MOVE_UP);
-    if(gameStage.openNodeCount != 50) return false;
+    if(gameStage.searchedNodeCount != 50) return false;
 
     cv.rollbackAction(unit, MOVE_UP);
-    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.searchedNodeCount != 41) return false;
+
+    return true;
+  }
+
+  /*
+   * Case18: ユニットの更新が出来ているかどうか
+   */
+  bool testCase18(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    if(gameStage.field[10][10].seenMembers.size() != 1) return false;
+
+    cv.updateUnitStatus(unitId, 10, 10, 1980);
+
+    if(gameStage.field[10][10].seenMembers.size() != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * Case19: ユニットの移動の際に視界の広さが取得出来ているかどうか
+   */
+  bool testCase19(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    if(gameStage.searchedNodeCount != 41) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_UP);
+    if(gameStage.searchedNodeCount != 50) return false;
+
+    return true;
+  }
+
+  /*
+   * Case20: 確保出来ている視界の数が取得できているかどうか
+   */
+  bool testCase20(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    if(cv.checkVisibleCount() != 41) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_UP);
+    if(gameStage.searchedNodeCount != 41) return false;
 
     return true;
   }
