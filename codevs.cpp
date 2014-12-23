@@ -602,28 +602,32 @@ class Codevs{
       switch(type){
         case MOVE_UP:
           if(canMove(unit->y, unit->x, MOVE_UP)){
-            moveUp(unit->id);
+            moveUp(unit);
+            openNode(unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
           break;
         case MOVE_DOWN:
           if(canMove(unit->y, unit->x, MOVE_DOWN)){
-            moveDown(unit->id);
+            moveDown(unit);
+            openNode(unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
           break;
         case MOVE_LEFT:
           if(canMove(unit->y, unit->x, MOVE_LEFT)){
-            moveLeft(unit->id);
+            moveLeft(unit);
+            openNode(unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
           break;
         case MOVE_RIGHT:
           if(canMove(unit->y, unit->x, MOVE_RIGHT)){
-            moveRight(unit->id);
+            moveRight(unit);
+            openNode(unit->y, unit->x, unit->eyeRange);
           }else{
             return false;
           }
@@ -686,16 +690,20 @@ class Codevs{
     void rollbackAction(Unit *unit, int type){
       switch(type){
         case MOVE_UP:
-          moveDown(unit->id);
+          closeNode(unit->y, unit->x, unit->eyeRange);
+          moveDown(unit);
           break;
         case MOVE_DOWN:
-          moveUp(unit->id);
+          closeNode(unit->y, unit->x, unit->eyeRange);
+          moveUp(unit);
           break;
         case MOVE_LEFT:
-          moveRight(unit->id);
+          closeNode(unit->y, unit->x, unit->eyeRange);
+          moveRight(unit);
           break;
         case MOVE_RIGHT:
-          moveLeft(unit->id);
+          closeNode(unit->y, unit->x, unit->eyeRange);
+          moveLeft(unit);
           break;
         case CREATE_WORKER:
           deleteUnit(unit->y, unit->x, WORKER);
@@ -730,29 +738,29 @@ class Codevs{
     /*
      * 上に動く
      */
-    void moveUp(int unitId){
-      unitList[unitId].y -= 1;
+    void moveUp(Unit *unit){
+      unit->y -= 1;
     }
 
     /*
      * 下に動く
      */
-    void moveDown(int unitId){
-      unitList[unitId].y += 1;
+    void moveDown(Unit *unit){
+      unit->y += 1;
     }
 
     /*
      * 左に動く
      */
-    void moveLeft(int unitId){
-      unitList[unitId].x -= 1;
+    void moveLeft(Unit *unit){
+      unit->x -= 1;
     }
 
     /*
      * 右に動く
      */
-    void moveRight(int unitId){
-      unitList[unitId].x += 1;
+    void moveRight(Unit *unit){
+      unit->x += 1;
     }
 
     /*
@@ -779,12 +787,14 @@ class Codevs{
         for(int operation = 0; operation < OPERATION_MAX; operation++){
           if(!OPERATION_LIST[unit->type][operation]) continue;
 
+          // 行動が成功した時だけ評価を行う
           if(unitAction(unit, operation)){
             Operation ope;
             ope.unitId = unit->id;
             ope.operation = operation;
             ope.evaluation = calcEvaluation(unit);
 
+            // 行動を元に戻す
             rollbackAction(unit, operation);
 
             que.push(ope);
@@ -796,6 +806,8 @@ class Codevs{
         // 行動なし以外はリストに入れる
         if(bestOperation.operation != NONE){
           operationList.push_back(bestOperation);
+
+          // 確定した行動はそのままにする
           unitAction(unit, bestOperation.operation);
         }
 
@@ -893,6 +905,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase14:\t%s\n", testCase14()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase15:\t%s\n", testCase15()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase16:\t%s\n", testCase16()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase17:\t%s\n", testCase17()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -977,7 +990,7 @@ class CodevsTest{
     int x = unit->x;
     int y = unit->y;
 
-    cv.moveUp(unit->id);
+    cv.moveUp(unit);
 
     return (x == unit->x && y-1 == unit->y);
   }
@@ -990,7 +1003,7 @@ class CodevsTest{
     int x = unit->x;
     int y = unit->y;
 
-    cv.moveDown(unit->id);
+    cv.moveDown(unit);
 
     return (x == unit->x && y+1 == unit->y);
   }
@@ -1003,7 +1016,7 @@ class CodevsTest{
     int x = unit->x;
     int y = unit->y;
 
-    cv.moveLeft(unit->id);
+    cv.moveLeft(unit);
 
     return (x-1 == unit->x && y == unit->y);
   }
@@ -1016,7 +1029,7 @@ class CodevsTest{
     int x = unit->x;
     int y = unit->y;
 
-    cv.moveRight(unit->id);
+    cv.moveRight(unit);
 
     return (x+1 == unit->x && y == unit->y);
   }
@@ -1210,6 +1223,29 @@ class CodevsTest{
     if(cv.unitAction(unit, CREATE_ASSASIN)) return false;
     if(!cv.unitAction(unit, CREATE_VILLAGE)) return false;
     if(!cv.unitAction(unit, CREATE_BASE)) return false;
+
+    return true;
+  }
+
+  /*
+   * ロールバックが出来ているかどうか
+   */
+  bool testCase17(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+
+    Unit *unit = &unitList[unitId];
+    myResourceCount = COST_MAX;
+
+    if(gameStage.openNodeCount != 41) return false;
+
+    cv.unitAction(unit, MOVE_UP);
+    if(gameStage.openNodeCount != 50) return false;
+
+    cv.rollbackAction(unit, MOVE_UP);
+    if(gameStage.openNodeCount != 41) return false;
 
     return true;
   }
