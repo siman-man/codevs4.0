@@ -103,8 +103,13 @@ const bool OPERATION_LIST[7][12] = {
 
 // ユニットへの指示
 struct Operation{
-  short unitId;     // ユニットID
-  char operation;   // 命令のリスト
+  short unitId;       // ユニットID
+  char  operation;    // 命令のリスト
+  int   evaluation;   // 命令の評価値
+
+  bool operator >(const Operation &e) const{
+    return evaluation < e.evaluation;
+  }    
 };
 
 // ユニットが持つ属性
@@ -130,6 +135,7 @@ struct Node{
   bool opened;            // 一度調査したことがあるかどうか
   char myUnitCount[7];    // 自軍の各ユニット数
   char enemyUnitCount[7]; // 相手の各ユニット数
+  short seenCount;        // 自軍のユニットがノードを監視している数
 };
 
 // ゲーム・フィールド全体の構造
@@ -142,8 +148,8 @@ int remainingTime;            // 残り時間
 int stageNumber;              // 現在のステージ数
 int currentStageNumber;       // 現在のステージ数
 int turn;                     // 現在のターン
-int myAllUnitCount;              // 自軍のユニット数
-int enemyAllUnitCount;           // 敵軍のユニット数
+int myAllUnitCount;           // 自軍のユニット数
+int enemyAllUnitCount;        // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
@@ -315,6 +321,8 @@ class Codevs{
       Node node;
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
+      node.seenCount = 0;
+      node.opened = false;
 
       return node;
     }
@@ -328,6 +336,15 @@ class Codevs{
     void createUnit(int y, int x, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] += 1;
       myResourceCount -= unitCost[unitType];
+      openNode(y, x, unitEyeRange[unitType]);
+    }
+
+    /*
+     * ユニットの削除を行う
+     */
+    void deleteUnit(int y, int x, int unitType){
+      gameStage.field[y][x].myUnitCount[unitType] -= 1;
+      myResourceCount += unitCost[unitType];
     }
 
     /*
@@ -403,9 +420,30 @@ class Codevs{
     }
 
     /*
-     * ユニットに対して指示を出す
+     * 視界をオープンする
      */
-    void operation(int unitId, int type){
+    void openNode(int ypos, int xpos, int eyeRange){
+      for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
+        int diff = 2*abs(ypos-y)/2;
+
+        for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
+          if(isWall(y,x)) continue;
+
+          gameStage.field[y][x].seenCount += 1;
+          bool opened = (gameStage.field[y][x].seenCount > 0);
+
+          //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
+
+          gameStage.openNodeCount += gameStage.field[y][x].opened ^ opened;
+          gameStage.field[y][x].opened = opened;
+        }
+      }
+    }
+
+    /*
+     * ユニットが行動を起こす
+     */
+    void unitAction(int unitId, int type){
       Unit *unit = &unitList[unitId];
 
       switch(type){
@@ -420,6 +458,51 @@ class Codevs{
           break;
         case MOVE_RIGHT:
           moveRight(unitId);
+          break;
+        case CREATE_WORKER:
+          createUnit(unit->y, unit->x, WORKER);
+          break;
+        case CREATE_KNIGHT:
+          createUnit(unit->y, unit->x, KNIGHT);
+          break;
+        case CREATE_FIGHER:
+          createUnit(unit->y, unit->x, FIGHER);
+          break;
+        case CREATE_ASSASIN:
+          createUnit(unit->y, unit->x, ASSASIN);
+          break;
+        case CREATE_VILLAGE:
+          createUnit(unit->y, unit->x, VILLAGE);
+          break;
+        case CREATE_BASE:
+          createUnit(unit->y, unit->x, BASE);
+          break;
+        default:
+          noMove();
+          break;
+      }
+    }
+
+    /*
+     * ユニットのアクションの取消を行う
+     * unitId: ユニットID
+     *   type: アクションの種類
+     */
+    void rollbackAction(int unitId, int type){
+      Unit *unit = &unitList[unitId];
+
+      switch(type){
+        case MOVE_UP:
+          moveDown(unit->id);
+          break;
+        case MOVE_DOWN:
+          moveUp(unit->id);
+          break;
+        case MOVE_LEFT:
+          moveRight(unit->id);
+          break;
+        case MOVE_RIGHT:
+          moveLeft(unit->id);
           break;
         case CREATE_WORKER:
           createUnit(unit->y, unit->x, WORKER);
@@ -496,6 +579,7 @@ class Codevs{
       // 各ユニット毎に処理を行う
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
+        priority_queue<Operation, vector<Operation>, greater<Operation> > que;
 
         fprintf(stderr, "unitId = %d\n", unit->id);
 
@@ -597,6 +681,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase12:\t%s\n", testCase12()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase13:\t%s\n", testCase13()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase14:\t%s\n", testCase14()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase15:\t%s\n", testCase15()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -622,6 +707,8 @@ class CodevsTest{
     if(unitIdCheckList.size() != 1) return false;
     cv.stageInitialize();
     if(unitIdCheckList.size() != 0) return false;
+    if(myActiveUnitList.size() != 0) return false;
+    if(gameStage.openNodeCount != 0) return false;
 
     return true;
   }
@@ -765,18 +852,22 @@ class CodevsTest{
   }
 
   /*
-   * ユニットが作成できるどうかの確認
+   * Case11: ユニットが作成できるどうかの確認
    */
   bool testCase11(){
+    cv.stageInitialize();
+
     myResourceCount = 40;
-    cv.createUnit(0,0,WORKER);
+    cv.createUnit(5,5,WORKER);
     if(myResourceCount != 0) return false;
-    if(gameStage.field[0][0].myUnitCount[WORKER] != 1) return false;
+    if(gameStage.field[5][5].myUnitCount[WORKER] != 1) return false;
+    if(gameStage.openNodeCount != 41) return false;
 
     myResourceCount = 20;
     cv.createUnit(1,1,KNIGHT);
     if(myResourceCount != 0) return false;
     if(gameStage.field[1][1].myUnitCount[KNIGHT] != 1) return false;
+    if(gameStage.openNodeCount != 60) return false;
 
     myResourceCount = 100;
     cv.createUnit(20,20,VILLAGE);
@@ -802,6 +893,7 @@ class CodevsTest{
     if(node.myUnitCount[BASE] != 0) return false;
     if(node.enemyUnitCount[WORKER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
+    if(node.seenCount != 0) return false;
 
     return true;
   }
@@ -854,6 +946,23 @@ class CodevsTest{
 
     return true;
   }
+
+  /*
+   * ユニットの削除が出来ているかどうかの確認
+   */
+  bool testCase15(){
+    int unitId = 100;
+    cv.stageInitialize();
+
+    myResourceCount = 40;
+    cv.createUnit(0,0,WORKER);
+
+    cv.deleteUnit(0,0,WORKER);
+    if(myResourceCount != 40) return false;
+    if(gameStage.field[0][0].myUnitCount[WORKER] != 0) return false;
+
+    return true;
+  }
 };
 
 int main(){
@@ -861,7 +970,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  //cvt.runTest();
+  cvt.runTest();
 
   return 0;
 }
