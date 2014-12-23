@@ -45,6 +45,7 @@ const int NONE    = 0;  // 何もしない(何も出来ない)
 const int SEARCH  = 1;  // 探索(空いてないマスを探索)
 const int DESTROY = 2;  // 破壊(敵を見つけて破壊)
 const int PICKING = 3;  // 資源採取
+const int ONRUSH  = 4;  // 突撃(敵の城が見つかり倒しに行く状態)
 
 // 各種最大値
 const int OPERATION_MAX = 11;   // 行動の種類
@@ -68,7 +69,7 @@ const int MAX_UNIT_ID   = 20010;  // ユニットのIDの上限
 const int HEIGHT        = 100;    // フィールドの横幅
 const int WIDTH         = 100;    // フィールドの縦幅
 
-int absDist[WIDTH*WIDTH];
+int absDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
@@ -97,44 +98,51 @@ const bool OPERATION_LIST[7][11] = {
   /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false}
 };
 
-// ユニットが持つ構造
+// ユニットが持つ属性
 struct Unit{
-  int id;           // ユニットのID
-  int mode;         // ユニットの状態
-  int y;            // y座標
-  int x;            // x座標
-  int hp;           // HP
-  int type;         // ユニットの種別
-  int eyeRange;     // 視野
-  int attackRange;  // 攻撃範囲
-  bool movable;     // 移動できるかどうか
+  int   id;           // ユニットのID
+  int   mode;         // ユニットの状態
+  char  y;            // y座標
+  char  x;            // x座標
+  int   hp;           // HP
+  int   type;         // ユニットの種別
+  int   eyeRange;     // 視野
+  int   attackRange;  // 攻撃範囲
+  bool  movable;      // 移動できるかどうか
+
+  int calcEvaluation(){
+    return 0;
+  }
 };
 
 // フィールドの1マスに対応する
 struct Node{
-  bool opened;        // 一度調査したことがあるかどうか
+  bool opened;            // 一度調査したことがあるかどうか
+  char myUnitCount[7];    // 自軍の各ユニット数
+  char enemyUnitCount[7]; // 相手の各ユニット数
 };
 
 // ゲーム・フィールド全体の構造
 struct GameField{
   short openNodeCount;
+  Node field[HEIGHT][WIDTH];        // ゲームフィールド
 };
 
 int remainingTime;            // 残り時間
 int stageNumber;              // 現在のステージ数
 int currentStageNumber;       // 現在のステージ数
 int turn;                     // 現在のターン
-int myUnitCount;              // 自軍のユニット数
-int enemyUnitCount;           // 敵軍のユニット数
+int myAllUnitCount;              // 自軍のユニット数
+int enemyAllUnitCount;           // 敵軍のユニット数
 int resourceCount;            // 資源の数
 int myResourceCount;          // 自軍の資源の数
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
-Node field[HEIGHT][WIDTH];        // ゲームフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
+GameField gameField;  // ゲームフィールド
 
 class Codevs{
   public:
@@ -143,7 +151,6 @@ class Codevs{
      */
     void init(){
       currentStageNumber = -1;
-      memcpy(tempField, field, sizeof(field));
 
       absDistInitialize();
 
@@ -182,13 +189,17 @@ class Codevs{
      * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
+      // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
 
+      // 探索が完了したマスの初期化
+      gameField.openNodeCount = 0;
+
+      // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
           Node node;
-
-          field[y][x] = node;
+          gameField.field[y][x] = node;
         }
       }
     }
@@ -223,10 +234,10 @@ class Codevs{
       scanf("%d", &myResourceCount);
 
       // 自軍のユニット数
-      scanf("%d", &myUnitCount);
+      scanf("%d", &myAllUnitCount);
 
       // 自軍ユニットの詳細
-      for(int i = 0; i < myUnitCount; i++){
+      for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
@@ -238,10 +249,10 @@ class Codevs{
       }
 
       // 視野内の敵軍のユニット数
-      scanf("%d", &enemyUnitCount);
+      scanf("%d", &enemyAllUnitCount);
 
       // 敵軍ユニットの詳細
-      for(int i = 0; i < enemyUnitCount; i++){
+      for(int i = 0; i < enemyAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
@@ -279,6 +290,17 @@ class Codevs{
       unit.movable      = unitCanMove[unitType];
 
       return unit;
+    }
+
+    /*
+     * ノードの作成を行う
+     */
+    Node createNode(){
+      Node node;
+      memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
+      memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
+
+      return node;
     }
 
     /*
@@ -483,6 +505,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase9:\t%s\n", testCase9()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase10:\t%s\n", testCase10()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase11:\t%s\n", testCase11()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase12:\t%s\n", testCase12()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -519,8 +542,8 @@ class CodevsTest{
     if(stageNumber != 0) return false;
     if(turn != 27) return false;
     if(myResourceCount != 29) return false;
-    if(myUnitCount != 13) return false;
-    if(enemyUnitCount != 0) return false;
+    if(myAllUnitCount != 13) return false;
+    if(enemyAllUnitCount != 0) return false;
     if(resourceCount != 1) return false;
 
     return true;
@@ -656,6 +679,21 @@ class CodevsTest{
     cv.createUnit(0,0,CREATE_WORKER);
 
     if(myResourceCount != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * ノードの作成がちゃんと出来ているかどうか
+   */
+  bool testCase12(){
+    Node node = cv.createNode();
+
+    if(node.opened) return false;
+    if(node.myUnitCount[WORKER] != 0) return false;
+    if(node.myUnitCount[BASE] != 0) return false;
+    if(node.enemyUnitCount[WORKER] != 0) return false;
+    if(node.enemyUnitCount[BASE] != 0) return false;
 
     return true;
   }
