@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <cassert>
 #include <map>
 #include <algorithm>
 #include <limits.h>
@@ -99,8 +100,8 @@ const int DAMAGE_TABLE[7][7] = {
 
 // 各ユニットが出来る行動 [ユニットID][行動リスト]
 const bool OPERATION_LIST[UNIT_MAX][OPERATION_MAX] = {
-  /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産城  産村   産拠 */
-  /* 労 */ {true,  true,  true,  true,  true, false, false, false, false, false, true,  true},
+  /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産城   産村   産拠 */
+  /* 労 */ {true,  true,  true,  true,  true, false, false, false, false, false,  true,  true},
   /* 騎 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
   /* 闘 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
   /* 殺 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
@@ -492,7 +493,7 @@ class Codevs{
 
       switch(unit->mode){
         case SEARCH:
-          return -2 * centerDist + sumDist + gameStage.visibleNodeCount + 20 * gameStage.openedNodeCount + 100 * myResourceCount;
+          return -2 * centerDist + 10 * gameStage.openedNodeCount + 100 * myResourceCount;
           break;
         case PICKING:
           return 0;
@@ -593,6 +594,7 @@ class Codevs{
       int size = operationList.size();
       fprintf(stderr,"finalOperation: size = %d\n", size);
       fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
+      fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
 
       printf("%d\n", size);
       for(int i = 0; i < size; i++){
@@ -717,7 +719,6 @@ class Codevs{
           if(canMove(unit->y, unit->x, MOVE_RIGHT)){
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveRight(unit);
-            openNode(unit->id, unit->y, unit->x, unit->eyeRange);
             if(final){
               checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
             }else{
@@ -885,19 +886,34 @@ class Codevs{
 
         for(int operation = 0; operation < OPERATION_MAX; operation++){
           if(!OPERATION_LIST[unit->type][operation]) continue;
+          fprintf(stderr,"operation = %d\n", operation);
+          int onc = gameStage.openedNodeCount;
+          int snc = gameStage.searchedNodeCount;
+          int vnc = gameStage.visibleNodeCount;
 
           // 行動が成功した時だけ評価を行う
           if(unitAction(unit, operation)){
+
             Operation ope;
             ope.unitId = unit->id;
             ope.operation = operation;
             ope.evaluation = calcEvaluation(unit);
 
+            fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
+            fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
             // 行動を元に戻す
             rollbackAction(unit, operation);
 
             que.push(ope);
+          }else{
+            fprintf(stderr,"Failed operation = %d\n", operation);
           }
+
+          // 元に戻っていない場合はエラー
+          fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
+          assert(snc == gameStage.searchedNodeCount);
+          assert(vnc == gameStage.visibleNodeCount);
+          assert(onc == gameStage.openedNodeCount);
         }
 
         Operation bestOperation = que.top();
@@ -1009,6 +1025,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase19:\t%s\n", testCase19()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase20:\t%s\n", testCase20()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase21:\t%s\n", testCase21()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase22:\t%s\n", testCase22()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -1349,6 +1366,7 @@ class CodevsTest{
     myResourceCount = COST_MAX;
 
     if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.visibleNodeCount != 41) return false;
 
     cv.unitAction(unit, MOVE_UP);
     if(gameStage.visibleNodeCount != 41) return false;
@@ -1447,6 +1465,33 @@ class CodevsTest{
     cv.unitAction(&unitList[unitId], MOVE_LEFT);
     if(gameStage.visibleNodeCount != 50) return false;
     if(gameStage.openedNodeCount != 5) return false;
+
+    return true;
+  }
+
+  /*
+   * Case22: 同じノードに何体生産しても値が変化しない
+   */
+  bool testCase22(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    myResourceCount = COST_MAX;
+    cv.addUnit(unitId, 10, 10, 2000, VILLAGE);
+
+    unitId = 101;
+    cv.addUnit(unitId, 10, 10, 2000, WORKER);
+
+    if(gameStage.searchedNodeCount != 221) return false;
+    if(gameStage.visibleNodeCount != 221) return false;
+    if(gameStage.openedNodeCount != 0) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_RIGHT);
+    cv.rollbackAction(&unitList[unitId], MOVE_RIGHT);
+
+    if(gameStage.searchedNodeCount != 221) return false;
+    if(gameStage.visibleNodeCount != 221) return false;
+    if(gameStage.openedNodeCount != 0) return false;
 
     return true;
   }
