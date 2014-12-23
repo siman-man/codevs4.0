@@ -37,8 +37,9 @@ const int CREATE_WORKER   =  5; // ワーカーを生産
 const int CREATE_KNIGHT   =  6; // ナイトを生産
 const int CREATE_FIGHER   =  7; // ファイターを生産
 const int CREATE_ASSASIN  =  8; // アサシンを生産
-const int CREATE_VILLAGE  =  9; // 村を生産
-const int CREATE_BASE     = 10; // 拠点を生産
+const int CREATE_CASTEL   =  9; // 城を生産
+const int CREATE_VILLAGE  = 10; // 村を生産
+const int CREATE_BASE     = 11; // 拠点を生産
 
 // ユニットの行動タイプ
 const int NONE    = 0;  // 何もしない(何も出来ない)
@@ -48,7 +49,7 @@ const int PICKING = 3;  // 資源採取
 const int ONRUSH  = 4;  // 突撃(敵の城が見つかり倒しに行く状態)
 
 // 各種最大値
-const int OPERATION_MAX = 11;   // 行動の種類
+const int OPERATION_MAX = 12;   // 行動の種類
 const int UNIT_MAX = 7;         // ユニットの種類
 const int COST_MAX = 99999;     // コストの最大値(城を事実上作れなくする)
 
@@ -56,9 +57,9 @@ const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
 
 // 各ユニットへの命令
-const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','5','6'};
-// 各ユニットの生産にかかるコスト(上の「行動一覧」と一致させておく)
-const int unitCost[OPERATION_MAX] = {40, 20, 40, 60, COST_MAX, 100, 500};
+const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
+// 各ユニットの生産にかかるコスト(上の「ユニット一覧」と一致させておく)
+const int unitCost[UNIT_MAX] = {40, 20, 40, 60, COST_MAX, 100, 500};
 // 各ユニットのHP
 const int unitHp[UNIT_MAX] = {2000, 5000, 5000, 5000, 50000, 20000, 20000};
 // 各ユニットの攻撃範囲
@@ -90,7 +91,7 @@ const int DAMAGE_TABLE[7][7] = {
 };
 
 // 各ユニットが出来る行動 [ユニットID][行動リスト]
-const bool OPERATION_LIST[7][12] = {
+const bool OPERATION_LIST[UNIT_MAX][OPERATION_MAX] = {
   /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産城  産村   産拠 */
   /* 労 */ {true,  true,  true,  true,  true, false, false, false, false, false, true,  true},
   /* 騎 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
@@ -345,6 +346,7 @@ class Codevs{
     void deleteUnit(int y, int x, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] -= 1;
       myResourceCount += unitCost[unitType];
+      closeNode(y, x, unitEyeRange[unitType]);
     }
 
     /*
@@ -439,6 +441,28 @@ class Codevs{
         }
       }
     }
+
+    /*
+     * 視界をクローズする
+     */
+    void closeNode(int ypos, int xpos, int eyeRange){
+      for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
+        int diff = 2*abs(ypos-y)/2;
+
+        for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
+          if(isWall(y,x)) continue;
+
+          gameStage.field[y][x].seenCount -= 1;
+          bool opened = (gameStage.field[y][x].seenCount > 0);
+
+          //fprintf(stderr,"y = %d, x = %d, value = %d\n", y, x, gameStage.field[y][x].opened ^ opened);
+
+          gameStage.openNodeCount -= gameStage.field[y][x].opened ^ opened;
+          gameStage.field[y][x].opened = opened;
+        }
+      }
+    }
+
 
     /*
      * ユニットが行動を起こす
@@ -583,11 +607,15 @@ class Codevs{
 
         fprintf(stderr, "unitId = %d\n", unit->id);
 
-        Operation ope;
-        ope.unitId = unit->id;
-        ope.operation = instruction[MOVE_RIGHT];
+        for(int i = 0; i < OPERATION_MAX; i++){
+          Operation ope;
+          ope.unitId = unit->id;
+          ope.operation = instruction[MOVE_RIGHT];
 
-        operationList.push_back(ope);
+          que.push(ope);
+        }
+
+        operationList.push_back(que.top());
 
         it++;
       }
@@ -899,7 +927,7 @@ class CodevsTest{
   }
 
   /*
-   * ユニットの追加が出来ているかどうかの確認
+   * Case13: ユニットの追加が出来ているかどうかの確認
    */
   bool testCase13(){
     int unitId = 100;
@@ -954,12 +982,19 @@ class CodevsTest{
     int unitId = 100;
     cv.stageInitialize();
 
-    myResourceCount = 40;
-    cv.createUnit(0,0,WORKER);
+    myResourceCount = 80;
+    cv.createUnit(1,1,WORKER);
+    cv.createUnit(5,5,WORKER);
 
-    cv.deleteUnit(0,0,WORKER);
+    cv.deleteUnit(1,1,WORKER);
     if(myResourceCount != 40) return false;
-    if(gameStage.field[0][0].myUnitCount[WORKER] != 0) return false;
+    if(gameStage.openNodeCount != 41) return false;
+    if(gameStage.field[1][1].myUnitCount[WORKER] != 0) return false;
+
+    cv.deleteUnit(5,5,WORKER);
+    if(myResourceCount != 80) return false;
+    if(gameStage.openNodeCount != 0) return false;
+    if(gameStage.field[5][5].myUnitCount[WORKER] != 0) return false;
 
     return true;
   }
