@@ -110,7 +110,7 @@ const bool OPERATION_LIST[UNIT_MAX][OPERATION_MAX] = {
 // ユニットへの指示
 struct Operation{
   short unitId;       // ユニットID
-  char  operation;    // 命令のリスト
+  short operation;    // 命令のリスト
   int   evaluation;   // 命令の評価値
 
   bool operator >(const Operation &e) const{
@@ -194,7 +194,7 @@ class Codevs{
      */
     void absDistInitialize(){
       string str;
-      ifstream ifs("absDist.txt");
+      ifstream ifs("/Users/siman/Programming/codevs4.0/absDist.txt");
 
       if(ifs.fail()){
         fprintf(stderr, "Failed\n");
@@ -213,6 +213,7 @@ class Codevs{
      * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
+      fprintf(stderr,"stageInitialize =>\n");
       // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
 
@@ -346,6 +347,7 @@ class Codevs{
 
       unitList[unitId] = unit;
       myActiveUnitList.insert(unitId);
+      openNode(y, x, unit.eyeRange);
     }
 
     /*
@@ -398,6 +400,8 @@ class Codevs{
       unit->x         = x;
       unit->hp        = hp;
       unit->timestamp = turn;
+
+      openNode(y, x, unit->eyeRange);
     }
 
     /*
@@ -464,9 +468,13 @@ class Codevs{
      * 評価値の計算
      */
     int calcEvaluation(Unit *unit){
+      int castelDist = calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
+      int centerDist = calcDist(unit->y, unit->x, 50, 50);
+      int sumDist = aroundMyUnitDist(unit);
+
       switch(unit->mode){
         case SEARCH:
-          return calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
+          return castelDist - 10 * centerDist + sumDist;
           break;
         case PICKING:
           return 0;
@@ -476,6 +484,30 @@ class Codevs{
       }
 
       return 0;
+    }
+
+    /*
+     * 自軍ユニットとの距離
+     */
+    int aroundMyUnitDist(Unit *unit){
+      int dist;
+      int sumDist = 0;
+
+      set<short>::iterator it = myActiveUnitList.begin();
+
+      while(it != myActiveUnitList.end()){
+        Unit *other = &unitList[*it];
+
+        if(other->movable){
+          dist = calcDist(unit->y, unit->x, other->y, other->x);
+
+          sumDist += dist;
+        }
+
+        it++;
+      }
+      
+      return sumDist;
     }
 
     /*
@@ -510,11 +542,12 @@ class Codevs{
      */
     void finalOperation(vector<Operation> &operationList){
       int size = operationList.size();
+      fprintf(stderr,"finalOperation: size = %d\n", size);
 
       printf("%d\n", size);
       for(int i = 0; i < size; i++){
         Operation ope = operationList[i];
-        printf("%d %c\n", ope.unitId, ope.operation);
+        printf("%d %c\n", ope.unitId, instruction[ope.operation]);
       }
     }
 
@@ -563,43 +596,86 @@ class Codevs{
 
     /*
      * ユニットが行動を起こす
+     * 行動が成功した場合はtrue、失敗した場合は場合はfalseを返す
      */
-    void unitAction(Unit *unit, int type){
+    bool unitAction(Unit *unit, int type){
       switch(type){
         case MOVE_UP:
-          moveUp(unit->id);
+          if(canMove(unit->y, unit->x, MOVE_UP)){
+            moveUp(unit->id);
+          }else{
+            return false;
+          }
           break;
         case MOVE_DOWN:
-          moveDown(unit->id);
+          if(canMove(unit->y, unit->x, MOVE_DOWN)){
+            moveDown(unit->id);
+          }else{
+            return false;
+          }
           break;
         case MOVE_LEFT:
-          moveLeft(unit->id);
+          if(canMove(unit->y, unit->x, MOVE_LEFT)){
+            moveLeft(unit->id);
+          }else{
+            return false;
+          }
           break;
         case MOVE_RIGHT:
-          moveRight(unit->id);
+          if(canMove(unit->y, unit->x, MOVE_RIGHT)){
+            moveRight(unit->id);
+          }else{
+            return false;
+          }
           break;
         case CREATE_WORKER:
-          createUnit(unit->y, unit->x, WORKER);
+          if(canBuild(unit->type, WORKER)){
+            createUnit(unit->y, unit->x, WORKER);
+          }else{
+            return false;
+          }
           break;
         case CREATE_KNIGHT:
-          createUnit(unit->y, unit->x, KNIGHT);
+          if(canBuild(unit->type, KNIGHT)){
+            createUnit(unit->y, unit->x, KNIGHT);
+          }else{
+            return false;
+          }
           break;
         case CREATE_FIGHER:
-          createUnit(unit->y, unit->x, FIGHER);
+          if(canBuild(unit->type, FIGHER)){
+            createUnit(unit->y, unit->x, FIGHER);
+          }else{
+            return false;
+          }
           break;
         case CREATE_ASSASIN:
-          createUnit(unit->y, unit->x, ASSASIN);
+          if(canBuild(unit->type, ASSASIN)){
+            createUnit(unit->y, unit->x, ASSASIN);
+          }else{
+            return false;
+          }
           break;
         case CREATE_VILLAGE:
-          createUnit(unit->y, unit->x, VILLAGE);
+          if(canBuild(unit->type, VILLAGE)){
+            createUnit(unit->y, unit->x, VILLAGE);
+          }else{
+            return false;
+          }
           break;
         case CREATE_BASE:
-          createUnit(unit->y, unit->x, BASE);
+          if(canBuild(unit->type, BASE)){
+            createUnit(unit->y, unit->x, BASE);
+          }else{
+            return false;
+          }
           break;
         default:
           noMove();
           break;
       }
+
+      return true;
     }
 
     /*
@@ -698,28 +774,29 @@ class Codevs{
         Unit *unit = &unitList[*it];
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
 
-        fprintf(stderr, "unitId = %d\n", unit->id);
+        fprintf(stderr, "turn = %d, unitId = %d mode = %d\n", turn, unit->id, unit->mode);
 
         for(int operation = 0; operation < OPERATION_MAX; operation++){
           if(!OPERATION_LIST[unit->type][operation]) continue;
 
-          unitAction(unit, operation);
+          if(unitAction(unit, operation)){
+            Operation ope;
+            ope.unitId = unit->id;
+            ope.operation = operation;
+            ope.evaluation = calcEvaluation(unit);
 
-          Operation ope;
-          ope.unitId = unit->id;
-          ope.operation = instruction[operation];
-          ope.evaluation = calcEvaluation(unit);
+            rollbackAction(unit, operation);
 
-          rollbackAction(unit, operation);
-
-          que.push(ope);
+            que.push(ope);
+          }
         }
 
         Operation bestOperation = que.top();
 
         // 行動なし以外はリストに入れる
-        if(bestOperation.operation != instruction[NONE]){
+        if(bestOperation.operation != NONE){
           operationList.push_back(bestOperation);
+          unitAction(unit, bestOperation.operation);
         }
 
         it++;
@@ -815,6 +892,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase13:\t%s\n", testCase13()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase14:\t%s\n", testCase14()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase15:\t%s\n", testCase15()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase16:\t%s\n", testCase16()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -1037,18 +1115,22 @@ class CodevsTest{
    * Case13: ユニットの追加が出来ているかどうかの確認
    */
   bool testCase13(){
+    cv.stageInitialize();
+
     int unitId = 100;
     cv.addUnit(unitId, 10, 10, 1980, WORKER);
     if(unitList[unitId].type != WORKER) return false;
     if(unitList[unitId].hp != 1980) return false;
     if(unitList[unitId].mode != NONE) return false;
     if(!unitList[unitId].movable) return false;
+    if(gameStage.openNodeCount != 41) return false;
 
     unitId = 101;
     cv.addUnit(unitId, 50, 50, 20000, VILLAGE);
     if(unitList[unitId].type != VILLAGE) return false;
     if(unitList[unitId].hp != 20000) return false;
     if(unitList[unitId].movable) return false;
+    if(gameStage.openNodeCount != 262) return false;
 
     unitId = 102;
     cv.addUnit(unitId, 30, 30, 20000, BASE);
@@ -1102,6 +1184,32 @@ class CodevsTest{
     if(myResourceCount != 80) return false;
     if(gameStage.openNodeCount != 0) return false;
     if(gameStage.field[5][5].myUnitCount[WORKER] != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * ユニットが取れるアクションについて制限が取れている
+   */
+  bool testCase16(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    cv.addUnit(unitId, 0, 0, 1980, WORKER);
+
+    Unit *unit = &unitList[unitId];
+    myResourceCount = COST_MAX;
+
+    if(cv.unitAction(unit, MOVE_UP)) return false;
+    if(!cv.unitAction(unit, MOVE_DOWN)) return false;
+    if(cv.unitAction(unit, MOVE_LEFT)) return false;
+    if(!cv.unitAction(unit, MOVE_RIGHT)) return false;
+    if(cv.unitAction(unit, CREATE_WORKER)) return false;
+    if(cv.unitAction(unit, CREATE_KNIGHT)) return false;
+    if(cv.unitAction(unit, CREATE_FIGHER)) return false;
+    if(cv.unitAction(unit, CREATE_ASSASIN)) return false;
+    if(!cv.unitAction(unit, CREATE_VILLAGE)) return false;
+    if(!cv.unitAction(unit, CREATE_BASE)) return false;
 
     return true;
   }
