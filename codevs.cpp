@@ -50,12 +50,13 @@ const int ONRUSH  = 4;  // 突撃(敵の城が見つかり倒しに行く状態)
 // 各種最大値
 const int OPERATION_MAX = 11;   // 行動の種類
 const int UNIT_MAX = 7;         // ユニットの種類
+const int COST_MAX = 99999;     // コストの最大値(城を事実上作れなくする)
 
 const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
 
 // 各ユニットの生産にかかるコスト(上の「行動一覧」と一致させておく)
-const int unitCost[OPERATION_MAX] = { -1, -1, -1, -1, -1, 40, 20, 40, 60, 100, 500};
+const int unitCost[OPERATION_MAX] = {40, 20, 40, 60, COST_MAX, 100, 500};
 // 各ユニットのHP
 const int unitHp[UNIT_MAX] = {2000, 5000, 5000, 5000, 50000, 20000, 20000};
 // 各ユニットの攻撃範囲
@@ -87,15 +88,15 @@ const int DAMAGE_TABLE[7][7] = {
 };
 
 // 各ユニットが出来る行動 [ユニットID][行動リスト]
-const bool OPERATION_LIST[7][11] = {
-  /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産村   産拠 */
-  /* 労 */ {true,  true,  true,  true,  true, false, false, false, false,  true,  true},
-  /* 騎 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
-  /* 闘 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
-  /* 殺 */ {true,  true,  true,  true,  true, false, false, false, false, false, false},
-  /* 城 */ {true, false, false, false, false,  true, false, false, false, false, false},
-  /* 村 */ {true, false, false, false, false,  true, false, false, false, false, false},
-  /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false}
+const bool OPERATION_LIST[7][12] = {
+  /*        動無   動上   動下   動左   動右   産労   産騎   産闘   産殺   産城  産村   産拠 */
+  /* 労 */ {true,  true,  true,  true,  true, false, false, false, false, false, true,  true},
+  /* 騎 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
+  /* 闘 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
+  /* 殺 */ {true,  true,  true,  true,  true, false, false, false, false, false, false, false},
+  /* 城 */ {true, false, false, false, false,  true, false, false, false, false, false, false},
+  /* 村 */ {true, false, false, false, false,  true, false, false, false, false, false, false},
+  /* 拠 */ {true, false, false, false, false, false,  true,  true,  true, false, false, false}
 };
 
 // ユニットが持つ属性
@@ -123,7 +124,7 @@ struct Node{
 };
 
 // ゲーム・フィールド全体の構造
-struct GameField{
+struct GameStage{
   short openNodeCount;
   Node field[HEIGHT][WIDTH];        // ゲームフィールド
 };
@@ -142,7 +143,7 @@ bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフ�
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
-GameField gameField;  // ゲームフィールド
+GameStage gameStage;  // ゲームフィールド
 
 class Codevs{
   public:
@@ -193,13 +194,12 @@ class Codevs{
       unitIdCheckList.clear();
 
       // 探索が完了したマスの初期化
-      gameField.openNodeCount = 0;
+      gameStage.openNodeCount = 0;
 
       // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          Node node;
-          gameField.field[y][x] = node;
+          gameStage.field[y][x] = createNode();
         }
       }
     }
@@ -305,13 +305,21 @@ class Codevs{
 
     /*
      * ユニットの作成を行う
+     *        y: y座標
+     *        x: x座標
+     * unitType: 生産するユニットの種類
      */
     void createUnit(int y, int x, int unitType){
+      gameStage.field[y][x].myUnitCount[unitType] += 1;
       myResourceCount -= unitCost[unitType];
     }
 
     /*
      * ユニットの更新を行う(座標と残りHP)
+     * unitId: ユニットのID
+     *      y: y座標
+     *      x: x座標
+     *     hp: HP
      */
     void updateUnit(int unitId, int y, int x, int hp){
       Unit *unit = &unitList[unitId];
@@ -474,7 +482,7 @@ class Codevs{
      * unitTType: ユニットの種類
      */
     bool canBuild(int unitType, int buildType){
-      return (OPERATION_LIST[unitType][buildType] && unitCost[buildType] <= myResourceCount);
+      return (OPERATION_LIST[unitType][buildType+5] && unitCost[buildType] <= myResourceCount);
     }
 
     /*
@@ -641,31 +649,34 @@ class CodevsTest{
     Unit *worker  = &unitList[3];
 
     myResourceCount = 19;
-    if(cv.canBuild(castel->type, CREATE_KNIGHT)) return false;
-    if(cv.canBuild(village->type, CREATE_WORKER)) return false;
-    if(cv.canBuild(base->type, CREATE_KNIGHT)) return false;
-    if(cv.canBuild(base->type, CREATE_FIGHER)) return false;
+    if(cv.canBuild(castel->type, KNIGHT)) return false;
+    if(cv.canBuild(village->type, WORKER)) return false;
+    if(cv.canBuild(base->type, KNIGHT)) return false;
+    if(cv.canBuild(base->type, FIGHER)) return false;
 
     myResourceCount = 20;
-    if(!cv.canBuild(base->type, CREATE_KNIGHT)) return false;
+    if(!cv.canBuild(base->type, KNIGHT)) return false;
+    if(cv.canBuild(worker->type, KNIGHT)) return false;
 
     myResourceCount = 40;
-    if(!cv.canBuild(village->type, CREATE_WORKER)) return false;
-    if(!cv.canBuild(castel->type, CREATE_WORKER)) return false;
-    if(!cv.canBuild(base->type, CREATE_KNIGHT)) return false;
-    if(!cv.canBuild(base->type, CREATE_FIGHER)) return false;
-    if(cv.canBuild(base->type, CREATE_ASSASIN)) return false;
+    if(!cv.canBuild(village->type, WORKER)) return false;
+    if(!cv.canBuild(castel->type, WORKER)) return false;
+    if(!cv.canBuild(base->type, KNIGHT)) return false;
+    if(!cv.canBuild(base->type, FIGHER)) return false;
+    if(cv.canBuild(base->type, ASSASIN)) return false;
 
     myResourceCount = 60;
-    if(!cv.canBuild(base->type, CREATE_ASSASIN)) return false;
-    if(cv.canBuild(worker->type, CREATE_VILLAGE)) return false;
+    if(!cv.canBuild(base->type, ASSASIN)) return false;
+    if(cv.canBuild(castel->type, ASSASIN)) return false;
+    if(cv.canBuild(worker->type, VILLAGE)) return false;
 
     myResourceCount = 100;
-    if(!cv.canBuild(worker->type, CREATE_VILLAGE)) return false;
-    if(cv.canBuild(worker->type, CREATE_BASE)) return false;
+    if(!cv.canBuild(worker->type, VILLAGE)) return false;
+    if(cv.canBuild(worker->type, BASE)) return false;
 
     myResourceCount = 500;
-    if(!cv.canBuild(worker->type, CREATE_BASE)) return false;
+    if(!cv.canBuild(worker->type, BASE)) return false;
+    if(cv.canBuild(village->type, BASE)) return false;
 
     return true;
   }
@@ -675,10 +686,24 @@ class CodevsTest{
    */
   bool testCase11(){
     myResourceCount = 40;
-
-    cv.createUnit(0,0,CREATE_WORKER);
-
+    cv.createUnit(0,0,WORKER);
     if(myResourceCount != 0) return false;
+    if(gameStage.field[0][0].myUnitCount[WORKER] != 1) return false;
+
+    myResourceCount = 20;
+    cv.createUnit(1,1,KNIGHT);
+    if(myResourceCount != 0) return false;
+    if(gameStage.field[1][1].myUnitCount[KNIGHT] != 1) return false;
+
+    myResourceCount = 100;
+    cv.createUnit(20,20,VILLAGE);
+    if(myResourceCount != 0) return false;
+    if(gameStage.field[20][20].myUnitCount[VILLAGE] != 1) return false;
+
+    myResourceCount = 500;
+    cv.createUnit(50,50,BASE);
+    if(myResourceCount != 0) return false;
+    if(gameStage.field[50][50].myUnitCount[BASE] != 1) return false;
 
     return true;
   }
