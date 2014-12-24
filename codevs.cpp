@@ -1142,12 +1142,6 @@ class Codevs{
     }
 
     /*
-     * ワーカーの生産
-     */
-    void createWorker(int unitid){
-    }
-
-    /*
      * 行動フェーズ
      * 自軍に対して各種行動を選択する
      */
@@ -1215,24 +1209,6 @@ class Codevs{
       }
 
       return operationList;
-    }
-
-    /*
-     * 戦闘フェーズ
-     */
-    void battle(){
-    }
-
-    /*
-     * 除外フェーズ
-     */
-    void exclude(){
-    }
-
-    /*
-     * 資源獲得フェーズ
-     */
-    void obtain(){
     }
 
     /*
