@@ -1312,6 +1312,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase21:\t%s\n", testCase21()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase22:\t%s\n", testCase22()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase23:\t%s\n", testCase23()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase24:\t%s\n", testCase24()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -1828,6 +1829,25 @@ class CodevsTest{
     cv.addResourceNode(unitA->y+3, unitA->x+3);
     if(cv.directUnitMode(unitA) == PICKING) return false;
     if(cv.directUnitMode(unitB) != PICKING) return false;
+
+    return true;
+  }
+
+  /*
+   * Case24: 資源マスの追加ができているかどうか
+   */
+  bool testCase24(){
+    cv.stageInitialize();
+
+    if(resourceNodeList.size() != 0) return false;
+    cv.addResourceNode(10, 10);
+
+    if(resourceNodeList.size() != 1) return false;
+    cv.addResourceNode(10, 10);
+    if(resourceNodeList.size() != 1) return false;
+
+    cv.addResourceNode(10, 20);
+    if(resourceNodeList.size() != 2) return false;
 
     return true;
   }
