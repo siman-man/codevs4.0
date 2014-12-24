@@ -81,7 +81,7 @@ const int MAX_UNIT_ID   = 20010;  // ユニットのIDの上限
 const int HEIGHT        = 100;    // フィールドの横幅
 const int WIDTH         = 100;    // フィールドの縦幅
 
-int absDist[WIDTH*WIDTH];   // マンハッタン距離の出力
+int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
@@ -202,7 +202,7 @@ class Codevs{
     void init(){
       currentStageNumber = -1;
 
-      absDistInitialize();
+      manhattanDistInitialize();
 
       // 壁判定の初期化処理
       for(int y = 0; y <= HEIGHT+1; y++){
@@ -218,21 +218,14 @@ class Codevs{
     /*
      * マンハッタン距離の初期化
      */
-    void absDistInitialize(){
-      string str;
-      ifstream ifs("C:\\Users\\Shuichi Tamayose\\Documents\\GitHub\\codevs4.0\\absDist.txt");
-
-      if(ifs.fail()){
-        fprintf(stderr, "Failed\n");
-      }   
-
-      int i = 0;
-      int dist;
-      while(getline(ifs, str)){
-        dist = atoi(str.c_str());
-        absDist[i] = dist;
-        i++;
-      }   
+    void manhattanDistInitialize(){
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          int id = (y*WIDTH+x);
+          int dist = abs(y-x);
+          manhattanDist[id] = dist;
+        } 
+      }
     }
 
     /*
@@ -1240,7 +1233,7 @@ class Codevs{
      * 渡された座標の距離を計算
      */
     int calcDist(int y1, int x1, int y2, int x2){
-      return absDist[x1*WIDTH+x2] + absDist[y1*WIDTH+y2];
+      return manhattanDist[x1*WIDTH+x2] + manhattanDist[y1*WIDTH+y2];
     }
 
     /*
