@@ -19,7 +19,7 @@ using namespace std;
 
 typedef long long ll;
 
-// ユニット一覧
+// 枠割一覧
 const int WORKER  = 0; // ワーカー
 const int KNIGHT  = 1; // ナイト
 const int FIGHER  = 2; // ファイター
@@ -27,6 +27,9 @@ const int ASSASIN = 3; // アサシン
 const int CASTEL  = 4; // 城
 const int VILLAGE = 5; // 村
 const int BASE    = 6; // 拠点
+
+// 行動の基本優先順位
+const int movePriority[10] = {10,9,8,7,6,5,4,3,2,1};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -41,6 +44,7 @@ const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_CASTEL   =  9; // 城を生産
 const int CREATE_VILLAGE  = 10; // 村を生産
 const int CREATE_BASE     = 11; // 拠点を生産
+
 
 // ユニットの行動タイプ
 const int NONE    = 0;  // 何もしない(何も出来ない)
@@ -122,12 +126,23 @@ struct Operation{
   }    
 };
 
+// 行動の優先順位
+struct MovePriority{
+  int unitId;   // ユニットID
+  int priority; // 優先度
+
+  bool operator >(const MovePriority &e) const{
+    return priority < e.priority;
+  }    
+};
+
 // ユニットが持つ属性
 struct Unit{
   int id;                 // ユニットのID
   int mode;               // ユニットの状態
   int y;                  // y座標
   int x;                  // x座標
+  int role;               // 役割
   int destY;              // 目的地のy座標
   int destX;              // 目的地のx座標
   int resourceY;          // 目的地(資源)のy座標
@@ -452,9 +467,10 @@ class Codevs{
 
       switch(unit->type){
         case WORKER:
-          if(node->resource){
+          if(node->resource && node->myUnitCount[WORKER] <= 5){
             unit->resourceY = unit->y;
             unit->resourceX = unit->x;
+
             return PICKING;
           }else{
             return SEARCH;
@@ -475,7 +491,7 @@ class Codevs{
      */
     Coord directNextPoint(int ypos, int xpos){
       Coord bestCoord;
-      int bestUnknownPoint = -9999;
+      int bestUnknownPoint = -999999;
       int unknownPoint;
       int dist;
 
@@ -502,7 +518,7 @@ class Codevs{
      * 指定した座標の未知数を計算
      */
     int calcUnknownPoint(int ypos, int xpos){
-      int point = -calcDist(ypos, xpos, 50, 50);
+      int point = 0;
 
       map<int, bool> checkList;
       queue<cell> que;
@@ -513,17 +529,20 @@ class Codevs{
         Coord coord = c.first;
         int dist = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || dist >= 10) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || dist >= 4) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        point += (gameStage.field[coord.y][coord.x].searched)? -1 : 10;
-        point -= 5 * gameStage.field[coord.y][coord.x].markCount;
-        point -= gameStage.field[coord.y][coord.x].opened;
+        point += (gameStage.field[coord.y][coord.x].searched)? -10 : 1000; 
+        point -= 4 * gameStage.field[coord.y][coord.x].markCount;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
           int nx = coord.x + dx[i];
-          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), dist+1));
+          if(!isWall(ny,nx)){
+            point -= 2;
+          }else{
+            que.push(cell(Coord(ny, nx), dist+1));
+          }
         }
       }
 
@@ -618,7 +637,7 @@ class Codevs{
         unit->mode = directUnitMode(unit);
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
-        if(unit->mode == SEARCH && ((turn % 5 == 0) || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
+        if(unit->mode == SEARCH && ((turn % 2 == 0) || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
           Coord coord = directNextPoint(unit->y, unit->x);
 
           unit->destY = coord.y;
@@ -654,6 +673,20 @@ class Codevs{
       }
 
       return NONE;
+    }
+
+    /*
+     * 役割を決める
+     */
+    int directUnitRole(Unit *unit){
+      return unit->type;
+    }
+
+    /*
+     * 行動の優先順位を決める
+     */
+    int directUnitMovePriority(Unit *unit){
+      return movePriority[unit->type];
     }
 
     /*
@@ -736,7 +769,7 @@ class Codevs{
               if(operation == NO_MOVE){
                 return -10000;
               }else{
-                return -10 * (destDist) + gameStage.openedNodeCount + 100 * myResourceCount - 20 * stamp;
+                return -(destDist) + 100 * myResourceCount - 25 * stamp;
               }
               break;
             case PICKING:
@@ -749,7 +782,7 @@ class Codevs{
         case VILLAGE:
           switch(unit->mode){
             case NONE:
-              return calcNoneEvaluation(unit, operation);
+              return calcNoneVillageEvaluation(unit, operation);
               break;
           }
           break;
@@ -801,9 +834,12 @@ class Codevs{
      * 村が動いていない時の評価値
      */
     int calcNoneVillageEvaluation(Unit *unit, int operation){
+      int castelDist = calcDist(unit->y, unit->x, 50, 50);
       Node *node = &gameStage.field[unit->y][unit->x];
 
-      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5){
+      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 6 && unit->createWorkerCount <= 6){
+        return 100;
+      }else if(operation == CREATE_WORKER && myResourceCount >= 100 && castelDist <= 50 && unit->createWorkerCount <= 10){
         return 100;
       }else{
         return 0;
@@ -956,11 +992,11 @@ class Codevs{
 
           node->seenCount = 0;
           node->cost = 0;
-          node->markCount = 0;
-          node->opened = false;
           if(turn % 4 == 0){
-            node->stamp = 0;
+            node->markCount = 0;
           }
+          node->opened = false;
+          node->stamp = 0;
 
           memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
           memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
@@ -1164,6 +1200,10 @@ class Codevs{
         case CREATE_WORKER:
           if(canBuild(unit->type, WORKER)){
             createUnit(unit->y, unit->x, WORKER);
+
+            if(final){
+              unit->createWorkerCount += 1;
+            }
           }else{
             return false;
           }
@@ -1303,10 +1343,23 @@ class Codevs{
     vector<Operation> actionPhase(){
       set<int>::iterator it = myActiveUnitList.begin();
       vector<Operation> operationList;
+      priority_queue<MovePriority, vector<MovePriority>, greater<MovePriority> > prique;
 
       // 各ユニット毎に処理を行う
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
+        MovePriority mp;
+        mp.unitId = (*it);
+        mp.priority = directUnitMovePriority(unit);
+        prique.push(mp);
+        it++;
+      }
+
+
+      while(!prique.empty()){
+        MovePriority mp = prique.top(); prique.pop();
+        Unit *unit = &unitList[mp.unitId];
+
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
         tempGameStage = gameStage;
 
@@ -1363,8 +1416,6 @@ class Codevs{
             unit->destX = UNDEFINED;
           }
         }
-
-        it++;
       }
 
       return operationList;
