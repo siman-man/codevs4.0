@@ -356,9 +356,7 @@ class Codevs{
       // 資源マスの詳細
       for(int i = 0; i < resourceCount; i++){
         scanf("%d %d", &y, &x);
-
-        gameStage.field[y][x].resource = true;
-        resourceNodeList.insert(y*WIDTH+x);
+        addResourceNode(y,x);
       }
 
       // 終端文字列
@@ -424,6 +422,14 @@ class Codevs{
       unitList[unitId] = unit;
       enemyActiveUnitList.insert(unitId);
       unitIdCheckList[unitId] = true;
+    }
+
+    /*
+     * 資源マスの追加を行う
+     */    
+    void addResourceNode(int y, int x){
+      gameStage.field[y][x].resource = true;
+      resourceNodeList.insert(y*WIDTH+x);
     }
 
     /*
@@ -1306,6 +1312,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase20:\t%s\n", testCase20()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase21:\t%s\n", testCase21()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase22:\t%s\n", testCase22()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase23:\t%s\n", testCase23()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -1595,7 +1602,6 @@ class CodevsTest{
     unitId = 101;
     cv.addMyUnit(unitId, 20, 20, 1980, WORKER);
     unitList[unitId].timestamp = -1;
-    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
     if(gameStage.visibleNodeCount != 82) return false;
     if(gameStage.openedNodeCount != 0) return false;
 
@@ -1604,9 +1610,6 @@ class CodevsTest{
     if(myActiveUnitList.size() != 1) return false;
     if(myActiveUnitList.find(100) == myActiveUnitList.end()) return false;
     if(myActiveUnitList.find(101) != myActiveUnitList.end()) return false;
-    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
-    if(gameStage.visibleNodeCount != 41) return false;
-    if(gameStage.openedNodeCount != 0) return false;
 
     return true;
   }
@@ -1814,7 +1817,17 @@ class CodevsTest{
 
     int unitId = 100;
     myResourceCount = COST_MAX;
-    cv.addMyUnit(unitId, 10, 10, 2000, VILLAGE);
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
+    unitId = 101;
+    cv.addMyUnit(unitId, 11, 11, 2000, WORKER);
+
+    Unit *unitA = &unitList[100];
+    Unit *unitB = &unitList[101];
+    if(unitA->mode != SEARCH) return false;
+
+    cv.addResourceNode(unitA->y+3, unitA->x+3);
+    if(cv.directUnitMode(unitA) == PICKING) return false;
+    if(cv.directUnitMode(unitB) != PICKING) return false;
 
     return true;
   }
