@@ -183,7 +183,8 @@ int myCastelCoordX;           // 自軍の城のx座標
 int enemyCastelCoordY;        // 敵軍の城のy座標
 int enemyCastelCoordX;        // 敵軍の城のx座標
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
-set<int> myActiveUnitList;    // 生存している自軍のユニットIDリスト
+set<int> myActiveUnitList;    // 生存している自軍のユニットのIDリスト
+set<int> enemyActiveUnitList; // 生存している敵軍のユニットのIDリスト
 set<int> resourceNodeList;    // 資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
@@ -319,9 +320,9 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          addUnit(unitId, y, x, hp, unitType);
+          addMyUnit(unitId, y, x, hp, unitType);
         }else{
-          updateUnitStatus(unitId, y, x, hp);
+          updateMyUnitStatus(unitId, y, x, hp);
         }
       }
 
@@ -340,9 +341,9 @@ class Codevs{
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          addUnit(unitId, y, x, hp, unitType);
+          addEnemyUnit(unitId, y, x, hp, unitType);
         }else{
-          updateUnitStatus(unitId, y, x, hp);
+          updateEnemyUnitStatus(unitId, y, x, hp);
         }
       }
 
@@ -362,14 +363,14 @@ class Codevs{
     }
 
     /*
-     * ユニットの追加を行う
+     * 自軍ユニットの追加を行う
      *   unitId: ユニットID
      *        y: y座標
      *        x: x座標
      *       hp: HP
      * unitType: ユニットの種類
      */
-    void addUnit(int unitId, int y, int x, int hp, int unitType){
+    void addMyUnit(int unitId, int y, int x, int hp, int unitType){
       Unit unit;
       unit.id           = unitId;
       unit.y            = y;
@@ -387,6 +388,31 @@ class Codevs{
       unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
       checkStamp(y, x, unit.eyeRange * 2);
+    }
+
+    /*
+     * 敵軍ユニットの追加を行う
+     *   unitId: ユニットID
+     *        y: y座標
+     *        x: x座標
+     *       hp: HP
+     * unitType: ユニットの種類
+     */
+    void addEnemyUnit(int unitId, int y, int x, int hp, int unitType){
+      Unit unit;
+      unit.id           = unitId;
+      unit.y            = y;
+      unit.x            = x;
+      unit.hp           = hp;
+      unit.type         = unitType;
+      unit.attackRange  = unitAttackRange[unitType];
+      unit.eyeRange     = unitEyeRange[unitType];
+      unit.movable      = unitCanMove[unitType];
+      unit.timestamp    = turn;
+
+      unitList[unitId] = unit;
+      enemyActiveUnitList.insert(unitId);
+      unitIdCheckList[unitId] = true;
     }
 
     /*
@@ -455,13 +481,13 @@ class Codevs{
     }
 
     /*
-     * ユニットの状態の更新を行う(座標と残りHP)
+     * 自軍ユニットの状態の更新を行う(座標と残りHP)
      * unitId: ユニットのID
      *      y: y座標
      *      x: x座標
      *     hp: HP
      */
-    void updateUnitStatus(int unitId, int y, int x, int hp){
+    void updateMyUnitStatus(int unitId, int y, int x, int hp){
       Unit *unit = &unitList[unitId];
       unit->y         = y;
       unit->x         = x;
@@ -470,6 +496,21 @@ class Codevs{
 
       checkNode(unitId, y, x, unit->eyeRange);
       checkStamp(y, x, unit->eyeRange * 2);
+    }
+
+    /*
+     * 敵軍ユニットの状態の更新を行う(座標と残りHP)
+     * unitId: ユニットのID
+     *      y: y座標
+     *      x: x座標
+     *     hp: HP
+     */
+    void updateEnemyUnitStatus(int unitId, int y, int x, int hp){
+      Unit *unit = &unitList[unitId];
+      unit->y         = y;
+      unit->x         = x;
+      unit->hp        = hp;
+      unit->timestamp = turn;
     }
 
     /*
@@ -489,9 +530,6 @@ class Codevs{
      * ユニットの状態を決定する
      */
     int directUnitMode(Unit *unit){
-      int y = unit->y;
-      int x = unit->x;
-
       switch(unit->type){
         case WORKER:
           if(unit->mode == PICKING || pickModeCheck(unit)){
@@ -509,6 +547,8 @@ class Codevs{
         default:
           return NONE;
       }
+
+      return NONE;
     }
 
     /*
@@ -577,7 +617,6 @@ class Codevs{
      * 評価値の計算
      */
     int calcEvaluation(Unit *unit, int operation){
-      int castelDist = calcDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
       int centerDist = calcDist(unit->y, unit->x, 40, 40);
       int rightUpDist = calcDist(unit->y, unit->x, 0, 99);
       int leftBottomDist = calcDist(unit->y, unit->x, 99, 0);
@@ -1285,6 +1324,15 @@ class CodevsTest{
     if(gameStage.visibleNodeCount != 0) return false;
     if(gameStage.openedNodeCount != 0) return false;
 
+    for(int y = 0; y < HEIGHT; y++){
+      for(int x = 0; x < WIDTH; x++){
+        Node *node = &gameStage.field[y][x];
+
+        if(node->seenCount != 0) return false;
+        if(node->resource) return false;
+      } 
+    }
+
     return true;
   }
 
@@ -1388,6 +1436,7 @@ class CodevsTest{
     myResourceCount = 20;
     if(!cv.canBuild(base->type, KNIGHT)) return false;
     if(cv.canBuild(worker->type, KNIGHT)) return false;
+    if(cv.canBuild(village->type, KNIGHT)) return false;
 
     myResourceCount = 40;
     if(!cv.canBuild(village->type, WORKER)) return false;
@@ -1395,6 +1444,7 @@ class CodevsTest{
     if(!cv.canBuild(base->type, KNIGHT)) return false;
     if(!cv.canBuild(base->type, FIGHER)) return false;
     if(cv.canBuild(base->type, ASSASIN)) return false;
+    if(cv.canBuild(village->type, FIGHER)) return false;
 
     myResourceCount = 60;
     if(!cv.canBuild(base->type, ASSASIN)) return false;
@@ -1403,6 +1453,9 @@ class CodevsTest{
 
     myResourceCount = 100;
     if(!cv.canBuild(worker->type, VILLAGE)) return false;
+    if(!cv.canBuild(base->type, KNIGHT)) return false;
+    if(!cv.canBuild(base->type, FIGHER)) return false;
+    if(!cv.canBuild(base->type, ASSASIN)) return false;
     if(cv.canBuild(worker->type, BASE)) return false;
 
     myResourceCount = 500;
@@ -1451,8 +1504,10 @@ class CodevsTest{
 
     if(node.opened) return false;
     if(node.myUnitCount[WORKER] != 0) return false;
+    if(node.myUnitCount[FIGHER] != 0) return false;
     if(node.myUnitCount[BASE] != 0) return false;
     if(node.enemyUnitCount[WORKER] != 0) return false;
+    if(node.enemyUnitCount[FIGHER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenMembers.size() != 0) return false;
     if(node.seenCount != 0) return false;
@@ -1471,24 +1526,24 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
     if(unitList[unitId].type != WORKER) return false;
     if(unitList[unitId].hp != 1980) return false;
-    if(unitList[unitId].mode != NONE) return false;
+    if(unitList[unitId].mode != SEARCH) return false;
     if(!unitList[unitId].movable) return false;
     if(!unitIdCheckList[unitId]) return false;
     if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.field[10][10].seenMembers.size() != 1) return false;
 
     unitId = 101;
-    cv.addUnit(unitId, 50, 50, 20000, VILLAGE);
+    cv.addMyUnit(unitId, 50, 50, 20000, VILLAGE);
     if(unitList[unitId].type != VILLAGE) return false;
     if(unitList[unitId].hp != 20000) return false;
     if(unitList[unitId].movable) return false;
     if(gameStage.searchedNodeCount != 262) return false;
 
     unitId = 102;
-    cv.addUnit(unitId, 30, 30, 20000, BASE);
+    cv.addMyUnit(unitId, 30, 30, 20000, BASE);
     if(unitList[unitId].type != BASE) return false;
     if(unitList[unitId].hp != 20000) return false;
     if(unitList[unitId].movable) return false;
@@ -1506,15 +1561,19 @@ class CodevsTest{
     int unitId = 100;
     cv.stageInitialize();
 
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
+    if(gameStage.visibleNodeCount != 41) return false;
 
     unitId = 101;
-    cv.addUnit(unitId, 20, 20, 1980, WORKER);
+    cv.addMyUnit(unitId, 20, 20, 1980, WORKER);
     unitList[unitId].timestamp = -1;
+    if(gameStage.visibleNodeCount != 82) return false;
 
     cv.unitSurvivalCheck();
 
     if(myActiveUnitList.size() != 1) return false;
+    if(myActiveUnitList.find(100) == myActiveUnitList.end()) return false;
+    if(myActiveUnitList.find(101) != myActiveUnitList.end()) return false;
 
     return true;
   }
@@ -1523,7 +1582,6 @@ class CodevsTest{
    * ユニットの削除が出来ているかどうかの確認
    */
   bool testCase15(){
-    int unitId = 100;
     cv.stageInitialize();
 
     myResourceCount = 80;
@@ -1550,7 +1608,7 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 0, 0, 1980, WORKER);
+    cv.addMyUnit(unitId, 0, 0, 1980, WORKER);
 
     Unit *unit = &unitList[unitId];
     myResourceCount = COST_MAX;
@@ -1576,7 +1634,7 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
     Unit *unit = &unitList[unitId];
     myResourceCount = COST_MAX;
@@ -1600,11 +1658,11 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
     if(gameStage.field[10][10].seenMembers.size() != 1) return false;
 
-    cv.updateUnitStatus(unitId, 10, 10, 1980);
+    cv.updateMyUnitStatus(unitId, 10, 10, 1980);
 
     if(gameStage.field[10][10].seenMembers.size() != 1) return false;
 
@@ -1618,9 +1676,9 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
-    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.visibleNodeCount != 41) return false;
 
     cv.unitAction(&unitList[unitId], MOVE_UP);
     if(gameStage.visibleNodeCount != 41) return false;
@@ -1635,12 +1693,15 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
     if(cv.checkVisibleCount() != 41) return false;
 
     cv.unitAction(&unitList[unitId], MOVE_UP);
-    if(gameStage.searchedNodeCount != 41) return false;
+    if(gameStage.visibleNodeCount != 41) return false;
+
+    cv.unitAction(&unitList[unitId], MOVE_DOWN);
+    if(gameStage.visibleNodeCount != 41) return false;
 
     return true;
   }
@@ -1652,7 +1713,7 @@ class CodevsTest{
     cv.stageInitialize();
 
     int unitId = 100;
-    cv.addUnit(unitId, 10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
     if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.visibleNodeCount != 41) return false;
@@ -1676,7 +1737,7 @@ class CodevsTest{
        */
 
     unitId = 101;
-    cv.addUnit(unitId,  10, 10, 1980, WORKER);
+    cv.addMyUnit(unitId,  10, 10, 1980, WORKER);
 
     cv.unitAction(&unitList[unitId], MOVE_LEFT);
     if(gameStage.visibleNodeCount != 50) return false;
@@ -1693,10 +1754,10 @@ class CodevsTest{
 
     int unitId = 100;
     myResourceCount = COST_MAX;
-    cv.addUnit(unitId, 10, 10, 2000, VILLAGE);
+    cv.addMyUnit(unitId, 10, 10, 2000, VILLAGE);
 
     unitId = 101;
-    cv.addUnit(unitId, 10, 10, 2000, WORKER);
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
 
     if(gameStage.searchedNodeCount != 221) return false;
     if(gameStage.visibleNodeCount != 221) return false;
@@ -1708,6 +1769,19 @@ class CodevsTest{
     if(gameStage.searchedNodeCount != 221) return false;
     if(gameStage.visibleNodeCount != 221) return false;
     if(gameStage.openedNodeCount != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * Case23: 採取モードに移行出来ているかどうかの確認
+   */
+  bool testCase23(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+    myResourceCount = COST_MAX;
+    cv.addMyUnit(unitId, 10, 10, 2000, VILLAGE);
 
     return true;
   }
