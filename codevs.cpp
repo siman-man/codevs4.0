@@ -285,6 +285,9 @@ class Codevs{
       // 調査予定のノード数をリセット
       gameStage.openedNodeCount = 0;
 
+      // 確保できている視野のリセット
+      gameStage.visibleNodeCount = 0;
+
       // 現在のステージ数(0-index)
       scanf("%d", &stageNumber);
 
@@ -389,6 +392,14 @@ class Codevs{
       checkNode(unitId, y, x, unit.eyeRange);
       checkStamp(y, x, unit.eyeRange * 2);
     }
+
+    /*
+     * 自軍のユニットを削除する
+     */
+    void removeMyUnit(Unit *unit){
+      myActiveUnitList.erase(unit->id);
+      uncheckNode(unit->y, unit->x, unit->type, unit->eyeRange);
+    } 
 
     /*
      * 敵軍ユニットの追加を行う
@@ -606,7 +617,7 @@ class Codevs{
         Unit *unit = &unitList[*it];
 
         if(unit->timestamp != turn){
-          myActiveUnitList.erase(unit->id);
+          removeMyUnit(unit);
         }
 
         it++;
@@ -789,6 +800,7 @@ class Codevs{
 
           node->seenCount = 0;
           node->cost = 0;
+          node->opened = false;
 
           memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
           memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
@@ -871,6 +883,21 @@ class Codevs{
             gameStage.visibleNodeCount += 1;
             gameStage.field[y][x].opened = true;
           }
+        }
+      }
+    }
+
+    /*
+     * 視界のアンチェックを行う
+     */
+    void uncheckNode(int unitId, int ypos, int xpos, int eyeRange){
+      for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
+        int diff = 2*abs(ypos-y)/2;
+
+        for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
+          if(isWall(y,x)) continue;
+
+          gameStage.field[y][x].seenMembers.erase(unitId);
         }
       }
     }
@@ -1563,17 +1590,23 @@ class CodevsTest{
 
     cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
     if(gameStage.visibleNodeCount != 41) return false;
+    if(gameStage.openedNodeCount != 0) return false;
 
     unitId = 101;
     cv.addMyUnit(unitId, 20, 20, 1980, WORKER);
     unitList[unitId].timestamp = -1;
+    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
     if(gameStage.visibleNodeCount != 82) return false;
+    if(gameStage.openedNodeCount != 0) return false;
 
     cv.unitSurvivalCheck();
 
     if(myActiveUnitList.size() != 1) return false;
     if(myActiveUnitList.find(100) == myActiveUnitList.end()) return false;
     if(myActiveUnitList.find(101) != myActiveUnitList.end()) return false;
+    fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
+    if(gameStage.visibleNodeCount != 41) return false;
+    if(gameStage.openedNodeCount != 0) return false;
 
     return true;
   }
