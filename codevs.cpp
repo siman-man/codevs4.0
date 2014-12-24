@@ -239,6 +239,12 @@ class Codevs{
       // アクティブユニットリストの初期化
       myActiveUnitList.clear();
 
+      // 敵ユニットリストの初期化
+      enemyActiveUnitList.clear();
+
+      // 資源マスの初期化
+      resourceNodeList.clear();
+
       // 探索が完了したマスの初期化
       gameStage.searchedNodeCount = 0;
 
@@ -1347,6 +1353,7 @@ class CodevsTest{
     cv.stageInitialize();
     if(unitIdCheckList.size() != 0) return false;
     if(myActiveUnitList.size() != 0) return false;
+    if(resourceNodeList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.visibleNodeCount != 0) return false;
     if(gameStage.openedNodeCount != 0) return false;
