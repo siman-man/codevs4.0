@@ -219,7 +219,7 @@ class Codevs{
      */
     void absDistInitialize(){
       string str;
-      ifstream ifs("/Users/siman/Programming/codevs4.0/absDist.txt");
+      ifstream ifs("C:\\Users\\Shuichi Tamayose\\Documents\\GitHub\\codevs4.0\\absDist.txt");
 
       if(ifs.fail()){
         fprintf(stderr, "Failed\n");
