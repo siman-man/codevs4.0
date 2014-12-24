@@ -9,5 +9,5 @@ task :run do
 end
 
 task :test do
-  system("#{@filename}.exe < sample.in")
+  system("./#{@filename} < sample.in")
 end

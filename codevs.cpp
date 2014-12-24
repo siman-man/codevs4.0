@@ -60,7 +60,8 @@ const int dy[5] = {0,-1, 1, 0, 0};
 const int dx[5] = {0, 0, 0,-1, 1};
 
 // その他
-const int UNKNOWN = -1;
+const int UNKNOWN = -1;       // 未知
+const int UNDEFINED = -1;     // 未定
 const int VIRTUAL_ID = 30000; // 仮想ID 
 const int REAL = true;        // 確定コマンド
 
@@ -114,7 +115,7 @@ const bool OPERATION_LIST[UNIT_MAX][OPERATION_MAX] = {
 struct Operation{
   int unitId;       // ユニットID
   int operation;    // 命令のリスト
-  int   evaluation;   // 命令の評価値
+  int evaluation;   // 命令の評価値
 
   bool operator >(const Operation &e) const{
     return evaluation < e.evaluation;
@@ -123,18 +124,21 @@ struct Operation{
 
 // ユニットが持つ属性
 struct Unit{
-  int id;           // ユニットのID
-  int mode;         // ユニットの状態
-  int y;            // y座標
-  int x;            // x座標
-  int destY;        // 目的地のy座標
-  int destX;        // 目的地のx座標
-  int hp;           // HP
-  int type;         // ユニットの種別
-  int eyeRange;     // 視野
-  int attackRange;  // 攻撃範囲
-  bool  movable;      // 移動できるかどうか
-  int timestamp;    // 更新ターン
+  int id;                 // ユニットのID
+  int mode;               // ユニットの状態
+  int y;                  // y座標
+  int x;                  // x座標
+  int destY;              // 目的地のy座標
+  int destX;              // 目的地のx座標
+  int resourceY;          // 目的地(資源)のy座標
+  int resourceX;          // 目的地(資源)のx座標
+  int createWorkerCount;  // 生産したワーカーの数
+  int hp;                 // HP
+  int type;               // ユニットの種別
+  int eyeRange;           // 視野
+  int attackRange;        // 攻撃範囲
+  bool  movable;          // 移動できるかどうか
+  int timestamp;          // 更新ターン
 };
 
 // フィールドの1マスに対応する
@@ -145,6 +149,7 @@ struct Node{
   bool rockon;              // ノードを狙っている自軍がいるかどうか
   int stamp;                // 足跡
   int cost;               // ノードのコスト
+  int markCount;          // マークカウント(自軍が行動する予定のマス)
   int seenCount;          // ノードを監視しているユニットの数 
   int myUnitCount[7];     // 自軍の各ユニット数
   int enemyUnitCount[7];  // 相手の各ユニット数
@@ -169,6 +174,8 @@ struct Coord{
     x = xpos;
   }
 };
+
+typedef pair<Coord, int> cell;
 
 int remainingTime;            // 残り時間
 int stageNumber;              // 現在のステージ数
@@ -377,6 +384,9 @@ class Codevs{
       unit.x            = x;
       unit.hp           = hp;
       unit.type         = unitType;
+      unit.destY        = UNDEFINED;
+      unit.destX        = UNDEFINED;
+      unit.createWorkerCount = 0;
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
@@ -387,7 +397,10 @@ class Codevs{
       myActiveUnitList.insert(unitId);
       unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
-      checkStamp(y, x, unit.eyeRange * 2);
+
+      if(unit.mode == SEARCH){
+        checkStamp(y, x, unit.eyeRange * 2);
+      }
     }
 
     /*
@@ -440,6 +453,8 @@ class Codevs{
       switch(unit->type){
         case WORKER:
           if(node->resource){
+            unit->resourceY = unit->y;
+            unit->resourceX = unit->x;
             return PICKING;
           }else{
             return SEARCH;
@@ -456,6 +471,66 @@ class Codevs{
     }
 
     /*
+     * 次の目的地を決める
+     */
+    Coord directNextPoint(int ypos, int xpos){
+      Coord bestCoord;
+      int bestUnknownPoint = -9999;
+      int unknownPoint;
+      int dist;
+
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          dist = calcDist(ypos, xpos, y, x);
+
+          if(dist != 8) continue;
+
+          unknownPoint = calcUnknownPoint(y,x);
+
+          if(bestUnknownPoint < unknownPoint){
+            bestUnknownPoint = unknownPoint;
+            bestCoord = Coord(y,x);
+          }
+        }
+      }
+
+      return bestCoord;
+    }
+
+    /*
+     * 未知領域の計算
+     * 指定した座標の未知数を計算
+     */
+    int calcUnknownPoint(int ypos, int xpos){
+      int point = -calcDist(ypos, xpos, 50, 50);
+
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos,xpos),0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist >= 10) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        point += (gameStage.field[coord.y][coord.x].searched)? -1 : 10;
+        point -= 5 * gameStage.field[coord.y][coord.x].markCount;
+        point -= gameStage.field[coord.y][coord.x].opened;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), dist+1));
+        }
+      }
+
+      return point;
+    }
+
+    /*
      * ノードの作成を行う
      */
     Node createNode(){
@@ -464,6 +539,7 @@ class Codevs{
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       node.seenCount = 0;
       node.stamp = 0;
+      node.markCount = 0;
       node.resource = false;
       node.opened = false;
       node.rockon = false;
@@ -511,7 +587,9 @@ class Codevs{
       unit->timestamp = turn;
 
       checkNode(unitId, y, x, unit->eyeRange);
-      checkStamp(y, x, unit->eyeRange * 2);
+      if(unit->mode == SEARCH){
+        checkStamp(y, x, unit->eyeRange * 2);
+      }
     }
 
     /*
@@ -538,6 +616,17 @@ class Codevs{
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
         unit->mode = directUnitMode(unit);
+
+        // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
+        if(unit->mode == SEARCH && ((turn % 5 == 0) || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
+          Coord coord = directNextPoint(unit->y, unit->x);
+
+          unit->destY = coord.y;
+          unit->destX = coord.x;
+
+          checkMark(unit->destY, unit->destX);
+        }
+
         it++;
       }
     }
@@ -580,8 +669,8 @@ class Codevs{
 
         if(!gameStage.field[y][x].rockon && checkMinDist(y, x, dist)){
           gameStage.field[y][x].rockon = true;
-          unit->destY = y;
-          unit->destX = x;
+          unit->resourceY = y;
+          unit->resourceX = x;
           return true;
         }
 
@@ -601,7 +690,7 @@ class Codevs{
         Unit *unit = &unitList[(*it)];
         int dist = calcDist(unit->y, unit->x, y, x);
 
-        if(minDist > dist) return false;
+        if(minDist > dist && unit->mode != PICKING) return false;
 
         it++;
       }
@@ -633,7 +722,7 @@ class Codevs{
      * 評価値の計算
      */
     int calcEvaluation(Unit *unit, int operation){
-      int centerDist = calcDist(unit->y, unit->x, 40, 40);
+      int destDist = (unit->mode == SEARCH)? calcDist(unit->y, unit->x, unit->destY, unit->destX) : 0;
       int rightUpDist = calcDist(unit->y, unit->x, 0, 99);
       int leftBottomDist = calcDist(unit->y, unit->x, 99, 0);
       int sumDist = aroundMyUnitDist(unit);
@@ -644,7 +733,11 @@ class Codevs{
         case WORKER:
           switch(unit->mode){
             case SEARCH:
-              return -(centerDist+rightUpDist+leftBottomDist) + 100 * cost + 2 * sumDist + 100 * myResourceCount - 20 * stamp;
+              if(operation == NO_MOVE){
+                return -10000;
+              }else{
+                return -10 * (destDist) + gameStage.openedNodeCount + 100 * myResourceCount - 20 * stamp;
+              }
               break;
             case PICKING:
               return calcPikingEvaluation(unit, operation);
@@ -660,6 +753,12 @@ class Codevs{
               break;
           }
           break;
+        case CASTEL:
+          switch(unit->mode){
+            case NONE:
+              return calcNoneCastelEvaluation(unit, operation);
+              break;
+          }
         default:
           break;
       }
@@ -681,7 +780,7 @@ class Codevs{
           return 10 * node->myUnitCount[WORKER];
         }
       }else{
-        return -calcDist(unit->y, unit->x, unit->destY, unit->destX);
+        return -calcDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
       }
     }
 
@@ -692,6 +791,32 @@ class Codevs{
       Node *node = &gameStage.field[unit->y][unit->x];
 
       if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5){
+        return 100;
+      }else{
+        return 0;
+      }
+    }
+
+    /*
+     * 村が動いていない時の評価値
+     */
+    int calcNoneVillageEvaluation(Unit *unit, int operation){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
+      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5){
+        return 100;
+      }else{
+        return 0;
+      }
+    }
+
+    /*
+     * 城が動いていない時の評価値
+     */
+    int calcNoneCastelEvaluation(Unit *unit, int operation){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
+      if(operation == CREATE_WORKER && turn <= 20){
         return 100;
       }else{
         return 0;
@@ -728,7 +853,6 @@ class Codevs{
     void checkCost(int ypos, int xpos){
       int cost = 3;
       map<int, bool> checkList;
-      typedef pair<Coord, int> cell;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), cost));
 
@@ -741,6 +865,33 @@ class Codevs{
         checkList[coord.y*WIDTH+coord.x] = true;
 
         gameStage.field[coord.y][coord.x].cost += cost;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), cost-1));
+        }
+      }
+    }
+
+    /*
+     * マークを付ける
+     */
+    void checkMark(int ypos, int xpos){
+      int cost = 5;
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), cost));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int cost = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || cost <= 0) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        gameStage.field[coord.y][coord.x].markCount += 1;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -805,7 +956,11 @@ class Codevs{
 
           node->seenCount = 0;
           node->cost = 0;
+          node->markCount = 0;
           node->opened = false;
+          if(turn % 4 == 0){
+            node->stamp = 0;
+          }
 
           memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
           memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
@@ -840,7 +995,7 @@ class Codevs{
 
         vector<Operation> operationList;
         // 行動フェーズ
-        if(turn <= 100){
+        if(turn <= 150){
           operationList = actionPhase();
         }
 
@@ -877,7 +1032,6 @@ class Codevs{
 
           gameStage.field[y][x].seenMembers.insert(unitId);
           gameStage.field[y][x].seenCount += 1;
-          gameStage.field[y][x].stamp += 1;
 
           if(!gameStage.field[y][x].searched){
             gameStage.searchedNodeCount += 1;
@@ -958,6 +1112,7 @@ class Codevs{
           if(canMove(unit->y, unit->x, MOVE_UP)){
             closeNode(unit->y, unit->x, unit->eyeRange);
             moveUp(unit);
+
             if(final){
               checkNode(unit->id, unit->y, unit->x, unit->eyeRange);
             }else{
@@ -1173,8 +1328,6 @@ class Codevs{
             ope.operation = operation;
             ope.evaluation = calcEvaluation(unit, operation);
 
-            if(unit->mode == SEARCH && operation == NO_MOVE) ope.evaluation -= 10000;
-
             /*
                fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
                fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
@@ -1203,6 +1356,12 @@ class Codevs{
 
           // 確定した行動はそのままにする
           unitAction(unit, bestOperation.operation, REAL);
+
+          // SEARCHモードのユニットが目的地に到達した場合は、目的地の座標をリセット
+          if(unit->mode == SEARCH && (unit->y == unit->destY && unit->x == unit->destX)){
+            unit->destY = UNDEFINED;
+            unit->destX = UNDEFINED;
+          }
         }
 
         it++;
@@ -1289,6 +1448,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase22:\t%s\n", testCase22()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase23:\t%s\n", testCase23()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase24:\t%s\n", testCase24()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase25:\t%s\n", testCase25()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -1523,6 +1683,7 @@ class CodevsTest{
     if(node.seenMembers.size() != 0) return false;
     if(node.seenCount != 0) return false;
     if(node.stamp != 0) return false;
+    if(node.markCount != 0) return false;
     if(node.resource) return false;
     if(node.rockon) return false;
     if(node.searched) return false;
@@ -1538,10 +1699,15 @@ class CodevsTest{
 
     int unitId = 100;
     cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
-    if(unitList[unitId].type != WORKER) return false;
-    if(unitList[unitId].hp != 1980) return false;
-    if(unitList[unitId].mode != SEARCH) return false;
-    if(!unitList[unitId].movable) return false;
+
+    Unit *unit = &unitList[unitId];
+    if(unit->type != WORKER) return false;
+    if(unit->hp != 1980) return false;
+    if(unit->mode != SEARCH) return false;
+    if(unit->destY != UNDEFINED) return false;
+    if(unit->destX != UNDEFINED) return false;
+    if(unit->createWorkerCount != 0) return false;
+    if(!unit->movable) return false;
     if(!unitIdCheckList[unitId]) return false;
     if(gameStage.searchedNodeCount != 41) return false;
     if(gameStage.field[10][10].seenMembers.size() != 1) return false;
@@ -1824,6 +1990,23 @@ class CodevsTest{
 
     cv.addResourceNode(10, 20);
     if(resourceNodeList.size() != 2) return false;
+
+    return true;
+  }
+
+  /*
+   * 最初のモードがちゃんと決められるか
+   */
+  bool testCase25(){
+    cv.stageInitialize();
+    int unitId = 100;
+
+    cv.addResourceNode(10, 10);
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
+
+    Unit *unit = &unitList[unitId];
+
+    if(unit->resourceY != 10 || unit->resourceX != 10) return false;
 
     return true;
   }
