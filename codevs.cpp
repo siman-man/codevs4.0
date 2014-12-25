@@ -176,9 +176,10 @@ struct Node{
 
 // ゲーム・フィールド全体の構造
 struct GameStage{
-  int searchedNodeCount;    // 調査済みのマスの数
-  int openedNodeCount;      // 調査予定マスの数
-  int visibleNodeCount;         // 現在確保できている視界の数   
+  int searchedNodeCount;      // 調査済みのマスの数
+  int openedNodeCount;        // 調査予定マスの数
+  int visibleNodeCount;       // 現在確保できている視界の数   
+  int gameSituation;          // 試合状況
   Node field[HEIGHT][WIDTH];  // ゲームフィールド
 };
 
@@ -219,6 +220,9 @@ map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチ�
 GameStage gameStage;      // ゲームフィールド
 GameStage tempGameStage;  // 一時的なゲーム・フィールド
 
+/*
+ * メインのコード部分
+ */
 class Codevs{
   public:
     /*
@@ -682,6 +686,9 @@ class Codevs{
      * 試合状況の更新を行う
      */
     void updateGameSituation(){
+      if(enemyActiveUnitList.size() == 0){
+        gameStage.gameSituation = OPENING;
+      }
     }
 
     /*
@@ -2135,6 +2142,10 @@ class CodevsTest{
    * Case28: 試合状況が確認できているかどうか
    */
   bool testCase28(){
+    cv.stageInitialize();
+
+    if(gameStage.gameSituation != OPENING) return false;
+
     return true;
   }
 };
