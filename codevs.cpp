@@ -32,7 +32,7 @@ const int LEADER    = 8; // 戦闘隊長
 const int COLLIERY  = 9; // 炭鉱(資源マスにワーカーが5人いる状態)
 
 // 行動の基本優先順位
-const int movePriority[10] = { 5, 9, 8, 7, 0, 10, 4, 3, 2, 1};
+const int movePriority[10] = { 5, 9, 8, 7, 0, 10, 15, 17, 20, 1};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -285,6 +285,9 @@ class Codevs{
       // 資源マスの初期化
       resourceNodeList.clear();
 
+      // ゲームの初期状態
+      gameStage.gameSituation = OPENING;
+
       // 探索が完了したマスの初期化
       gameStage.searchedNodeCount = 0;
 
@@ -430,6 +433,20 @@ class Codevs{
       if(unit.mode == SEARCH){
         //checkStamp(y, x, unit.eyeRange * 2);
       }
+      if(unit.role == COMBATANT){
+        set<int>::iterator it = myActiveUnitList.begin();
+
+        while(it != myActiveUnitList.end()){
+          Unit *other = &unitList[*it];
+
+          if(calcManhattanDist(unit.y, unit.x, other->y, other->x) == 0 && other->mode == LEADER){
+            unitList[unitId].destY = other->y;
+            unitList[unitId].destX = other->x;
+          }
+
+          it++;
+        }
+      }
     }
 
     /*
@@ -500,6 +517,13 @@ class Codevs{
         case VILLAGE:
           return NONE;
           break;
+        case ASSASIN:
+          if(node->myUnitCount[ASSASIN] == 1){
+            return SEARCH;
+          }else{
+            return SEARCH;
+          }
+          break;
         default:
           break;
       }
@@ -512,6 +536,13 @@ class Codevs{
      */
     Coord directNextPoint(Unit *unit){
       Coord bestCoord;
+
+      if(turn >= 250) return Coord(80, 80);
+
+      if(gameStage.gameSituation == ONRUSH){
+        assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordY != UNDEFINED);
+        assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordX != UNDEFINED);
+      }
 
       queue<Coord> que;
       que.push(Coord(unit->y, unit->x));
@@ -675,8 +706,13 @@ class Codevs{
         if(unit->mode == SEARCH && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
           Coord coord = directNextPoint(unit);
 
-          unit->destY = coord.y;
-          unit->destX = coord.x;
+          if(enemyCastelCoordY != UNDEFINED){
+            unit->destY = enemyCastelCoordY;
+            unit->destX = enemyCastelCoordX;
+          }else{
+            unit->destY = coord.y;
+            unit->destX = coord.x;
+          }
 
           checkMark(unit->destY, unit->destX);
         }
@@ -702,6 +738,13 @@ class Codevs{
         case FIGHER:
           break;
         case ASSASIN:
+          if(unit->mode == LEADER){
+            return SEARCH;
+            return LEADER;
+          }else{
+            return SEARCH;
+            return COMBATANT;
+          }
           break;
         default:
           return NONE;
@@ -714,8 +757,10 @@ class Codevs{
      * 試合状況の更新を行う
      */
     void updateGameSituation(){
-      if(enemyActiveUnitList.size() == 0){
+      if(gameStage.gameSituation != WARNING && enemyActiveUnitList.size() == 0){
         gameStage.gameSituation = OPENING;
+      }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+        gameStage.gameSituation = ONRUSH;
       }else{
         gameStage.gameSituation = WARNING;
       }
@@ -725,7 +770,15 @@ class Codevs{
      * 役割を決める
      */
     int directUnitRole(Unit *unit){
-      return unit->type;
+      if(unit->type == ASSASIN){
+        if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] == 1){
+          return LEADER;
+        }else{
+          return COMBATANT;
+        }
+      }else{
+        return unit->type;
+      }
     }
 
     /*
@@ -840,6 +893,20 @@ class Codevs{
               return calcNoneCastelEvaluation(unit, operation);
               break;
           }
+        case BASE:
+          switch(unit->mode){
+            case NONE:
+              return calcNoneBaseEvaluation(unit, operation);
+              break;
+          }
+          break;
+        case ASSASIN:
+          if(unit->role == LEADER){
+            return calcLeaderEvaluation(unit, operation);
+          }else{
+            return calcCombatEvaluation(unit, operation);
+          }
+          break;
         default:
           break;
       }
@@ -855,7 +922,10 @@ class Codevs{
       Node *node = &gameStage.field[unit->y][unit->x];
 
       if(node->resource){
-        if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
+        //fprintf(stderr,"Base Count = %d\n", node->myUnitCount[BASE]);
+        if(gameStage.gameSituation == WARNING && operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
+          return 10000;
+        }else if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
           return 100;
         }else{
           return 10 * node->myUnitCount[WORKER];
@@ -885,8 +955,10 @@ class Codevs{
       int castelDist = calcManhattanDist(unit->y, unit->x, 50, 50);
       Node *node = &gameStage.field[unit->y][unit->x];
 
-      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 6 && unit->createWorkerCount <= 6){
+      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 6 && unit->createWorkerCount <= 5){
         return 100;
+      }else if(operation != CREATE_WORKER && gameStage.gameSituation == WARNING){
+        return 1000;
       }else if(operation == CREATE_WORKER && myResourceCount >= 100 && castelDist <= 50 && unit->createWorkerCount <= 10){
         return 100;
       }else{
@@ -903,6 +975,43 @@ class Codevs{
       }else{
         return 0;
       }
+    }
+
+    /*
+     * 拠点が動いていない時の評価値
+     */
+    int calcNoneBaseEvaluation(Unit *unit, int operation){
+      if(operation == CREATE_ASSASIN){
+        return 100;
+      }else{
+        return 0;
+      }
+    }
+
+    /*
+     * リーダ時の行動パターン
+     */
+    int calcLeaderEvaluation(Unit *unit, int operation){
+      if(unit->mode == ONRUSH){
+        return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+      }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 4){
+        return -1 * calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
+        if(operation == NO_MOVE){
+          return 100;
+        }else{
+          return 0;
+        }
+      }else{
+        return -1 * calcManhattanDist(unit->y, unit->x, 99, 99);
+      }
+    }
+
+    /*
+     *
+     */
+    int calcCombatEvaluation(Unit *unit, int operation){
+
+      return 0;
     }
 
     /*
@@ -1098,14 +1207,15 @@ class Codevs{
         // 自軍の生存確認
         unitSurvivalCheck();
 
+        // 試合状況更新
+        updateGameSituation();
+
         // 自軍の各ユニットのモード変更を行う
         updateUnitMode();
 
         vector<Operation> operationList;
         // 行動フェーズ
-        if(turn <= 150){
-          operationList = actionPhase();
-        }
+        operationList = actionPhase();
 
         // 最終的な出力
         finalOperation(operationList);
@@ -1117,9 +1227,11 @@ class Codevs{
      */
     void finalOperation(vector<Operation> &operationList){
       int size = operationList.size();
-      fprintf(stderr,"finalOperation: size = %d\n", size);
-      fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
-      fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
+      if(gameStage.gameSituation != ONRUSH){
+        fprintf(stderr,"finalOperation: size = %d\n", size);
+        fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
+        fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
+      }
 
       printf("%d\n", size);
       for(int i = 0; i < size; i++){
@@ -1435,6 +1547,8 @@ class Codevs{
       while(!prique.empty()){
         MovePriority mp = prique.top(); prique.pop();
         Unit *unit = &unitList[mp.unitId];
+
+        if(unit->type == WORKER && gameStage.gameSituation == ONRUSH) continue;
 
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
         gameStage.searchedNodeCount = 0;
@@ -1776,6 +1890,8 @@ class CodevsTest{
     myResourceCount = 500;
     if(!cv.canBuild(worker->type, BASE)) return false;
     if(cv.canBuild(village->type, BASE)) return false;
+    if(!cv.canBuild(worker->type, BASE)) return false;
+    if(cv.canBuild(castel->type, BASE)) return false;
 
     return true;
   }
