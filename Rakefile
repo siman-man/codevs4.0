@@ -11,3 +11,7 @@ end
 task :test do
   system("./#{@filename} < sample.in")
 end
+
+task :check do
+  system("#{@filename}.exe < sample.in")
+end

@@ -497,7 +497,7 @@ class Codevs{
 
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          dist = calcDist(ypos, xpos, y, x);
+          dist = calcManhattanDist(ypos, xpos, y, x);
 
           if(dist != 8) continue;
 
@@ -698,7 +698,7 @@ class Codevs{
       while(it != resourceNodeList.end()){
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
-        int dist = calcDist(unit->y, unit->x, y, x);
+        int dist = calcManhattanDist(unit->y, unit->x, y, x);
 
         if(!gameStage.field[y][x].rockon && checkMinDist(y, x, dist)){
           gameStage.field[y][x].rockon = true;
@@ -721,7 +721,7 @@ class Codevs{
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[(*it)];
-        int dist = calcDist(unit->y, unit->x, y, x);
+        int dist = calcManhattanDist(unit->y, unit->x, y, x);
 
         if(minDist > dist && unit->mode != PICKING) return false;
 
@@ -755,9 +755,9 @@ class Codevs{
      * 評価値の計算
      */
     int calcEvaluation(Unit *unit, int operation){
-      int destDist = (unit->mode == SEARCH)? calcDist(unit->y, unit->x, unit->destY, unit->destX) : 0;
-      int rightUpDist = calcDist(unit->y, unit->x, 0, 99);
-      int leftBottomDist = calcDist(unit->y, unit->x, 99, 0);
+      int destDist = (unit->mode == SEARCH)? calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX) : 0;
+      int rightUpDist = calcManhattanDist(unit->y, unit->x, 0, 99);
+      int leftBottomDist = calcManhattanDist(unit->y, unit->x, 99, 0);
       int sumDist = aroundMyUnitDist(unit);
       int cost = gameStage.field[unit->y][unit->x].cost;
       int stamp = gameStage.field[unit->y][unit->x].stamp;
@@ -813,7 +813,7 @@ class Codevs{
           return 10 * node->myUnitCount[WORKER];
         }
       }else{
-        return -calcDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
+        return -calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
       }
     }
 
@@ -834,7 +834,7 @@ class Codevs{
      * 村が動いていない時の評価値
      */
     int calcNoneVillageEvaluation(Unit *unit, int operation){
-      int castelDist = calcDist(unit->y, unit->x, 50, 50);
+      int castelDist = calcManhattanDist(unit->y, unit->x, 50, 50);
       Node *node = &gameStage.field[unit->y][unit->x];
 
       if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 6 && unit->createWorkerCount <= 6){
@@ -872,7 +872,7 @@ class Codevs{
         Unit *other = &unitList[*it];
 
         if(other->movable){
-          dist = min(10, calcDist(unit->y, unit->x, other->y, other->x));
+          dist = min(10, calcManhattanDist(unit->y, unit->x, other->y, other->x));
 
           sumDist += dist;
         }
@@ -1422,9 +1422,9 @@ class Codevs{
     }
 
     /*
-     * 渡された座標の距離を計算
+     * 渡された座標のマンハッタン距離を計算
      */
-    int calcDist(int y1, int x1, int y2, int x2){
+    int calcManhattanDist(int y1, int x1, int y2, int x2){
       return manhattanDist[x1*WIDTH+x2] + manhattanDist[y1*WIDTH+y2];
     }
 
@@ -1506,11 +1506,11 @@ class CodevsTest{
    * マンハッタン距離が取得出来ているかどうかの確認
    */
   bool testCase1(){
-    if(cv.calcDist(0,0,1,1) != 2) return false;
-    if(cv.calcDist(0,0,0,0) != 0) return false;
-    if(cv.calcDist(99,99,99,99) != 0) return false;
-    if(cv.calcDist(0,99,99,0) != 198) return false;
-    if(cv.calcDist(3,20,9,19) != 7) return false;
+    if(cv.calcManhattanDist(0,0,1,1) != 2) return false;
+    if(cv.calcManhattanDist(0,0,0,0) != 0) return false;
+    if(cv.calcManhattanDist(99,99,99,99) != 0) return false;
+    if(cv.calcManhattanDist(0,99,99,0) != 198) return false;
+    if(cv.calcManhattanDist(3,20,9,19) != 7) return false;
 
     return true;
   }
@@ -2046,7 +2046,7 @@ class CodevsTest{
   }
 
   /*
-   * 最初のモードがちゃんと決められるか
+   * Case25: 最初のモードがちゃんと決められるか
    */
   bool testCase25(){
     cv.stageInitialize();
@@ -2058,6 +2058,27 @@ class CodevsTest{
     Unit *unit = &unitList[unitId];
 
     if(unit->resourceY != 10 || unit->resourceX != 10) return false;
+
+    return true;
+  }
+
+  /*
+   * Case26: 行動の優先順位が設定されているかどうか
+   */
+  bool testCase26(){
+    cv.stageInitialize(); 
+
+    int unitId = 100;
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
+    Unit *worker = &unitList[unitId];
+    int wmp = cv.directUnitMovePriority(worker);
+
+    unitId = 101;
+    cv.addMyUnit(unitId, 11, 11, 2000, VILLAGE);
+    Unit *village = &unitList[unitId];
+    int vmp = cv.directUnitMovePriority(village);
+
+    if(wmp > vmp) return false;
 
     return true;
   }
