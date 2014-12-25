@@ -29,7 +29,7 @@ const int VILLAGE = 5; // 村
 const int BASE    = 6; // 拠点
 
 // 行動の基本優先順位
-const int movePriority[10] = {10,9,8,7,6,5,4,3,2,1};
+const int movePriority[10] = { 5, 9, 8, 7, 0, 9, 4, 3, 2, 1};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -44,6 +44,9 @@ const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_CASTEL   =  9; // 城を生産
 const int CREATE_VILLAGE  = 10; // 村を生産
 const int CREATE_BASE     = 11; // 拠点を生産
+
+// 試合状況一覧
+const int OPENING = 0;  // 序盤戦
 
 
 // ユニットの行動タイプ
@@ -676,6 +679,12 @@ class Codevs{
     }
 
     /*
+     * 試合状況の更新を行う
+     */
+    void updateGameSituation(){
+    }
+
+    /*
      * 役割を決める
      */
     int directUnitRole(Unit *unit){
@@ -756,10 +765,6 @@ class Codevs{
      */
     int calcEvaluation(Unit *unit, int operation){
       int destDist = (unit->mode == SEARCH)? calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX) : 0;
-      int rightUpDist = calcManhattanDist(unit->y, unit->x, 0, 99);
-      int leftBottomDist = calcManhattanDist(unit->y, unit->x, 99, 0);
-      int sumDist = aroundMyUnitDist(unit);
-      int cost = gameStage.field[unit->y][unit->x].cost;
       int stamp = gameStage.field[unit->y][unit->x].stamp;
 
       switch(unit->type){
@@ -850,8 +855,6 @@ class Codevs{
      * 城が動いていない時の評価値
      */
     int calcNoneCastelEvaluation(Unit *unit, int operation){
-      Node *node = &gameStage.field[unit->y][unit->x];
-
       if(operation == CREATE_WORKER && turn <= 20){
         return 100;
       }else{
@@ -1470,6 +1473,9 @@ class Codevs{
     }
 };
 
+/*
+ * ここから下はテストコード
+ */
 class CodevsTest{
   Codevs cv;
 
@@ -1500,10 +1506,13 @@ class CodevsTest{
     fprintf(stderr, "TestCase23:\t%s\n", testCase23()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase24:\t%s\n", testCase24()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase25:\t%s\n", testCase25()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase26:\t%s\n", testCase26()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase27:\t%s\n", testCase27()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase28:\t%s\n", testCase28()? "SUCCESS!" : "FAILED!");
   }
 
   /*
-   * マンハッタン距離が取得出来ているかどうかの確認
+   * Case1: マンハッタン距離が取得出来ているかどうかの確認
    */
   bool testCase1(){
     if(cv.calcManhattanDist(0,0,1,1) != 2) return false;
@@ -1511,6 +1520,7 @@ class CodevsTest{
     if(cv.calcManhattanDist(99,99,99,99) != 0) return false;
     if(cv.calcManhattanDist(0,99,99,0) != 198) return false;
     if(cv.calcManhattanDist(3,20,9,19) != 7) return false;
+    if(cv.calcManhattanDist(0,0,50,50) != 100) return false;
 
     return true;
   }
@@ -1523,7 +1533,7 @@ class CodevsTest{
     if(turn != 27) return false;
     if(myResourceCount != 29) return false;
     if(myAllUnitCount != 13) return false;
-    if(enemyAllUnitCount != 0) return false;
+    if(enemyAllUnitCount != 1) return false;
     if(resourceCount != 1) return false;
     if(myCastelCoordY != 7 || myCastelCoordX != 16) return false;
 
@@ -1541,6 +1551,7 @@ class CodevsTest{
     cv.stageInitialize();
     if(unitIdCheckList.size() != 0) return false;
     if(myActiveUnitList.size() != 0) return false;
+    if(enemyActiveUnitList.size() != 0) return false;
     if(resourceNodeList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.visibleNodeCount != 0) return false;
@@ -1559,7 +1570,7 @@ class CodevsTest{
   }
 
   /*
-   * 壁判定がちゃんと出来ているかどうか
+   * Case4: 壁判定がちゃんと出来ているかどうか
    */
   bool testCase4(){
     if(!cv.isWall(-1,-1)) return false;
@@ -1576,7 +1587,7 @@ class CodevsTest{
   }
 
   /*
-   * 移動判定が出来ているかどうか
+   * Case5: 移動判定が出来ているかどうか
    */
   bool testCase5(){
     if(cv.canMove(0,0,MOVE_UP)) return false;
@@ -1589,7 +1600,7 @@ class CodevsTest{
   }
 
   /*
-   * 「上に移動」が出来ているかどうか
+   * Case6: 「上に移動」が出来ているかどうか
    */
   bool testCase6(){
     Unit *unit = &unitList[0];
@@ -1602,7 +1613,7 @@ class CodevsTest{
   }
 
   /*
-   * 「下に移動」が出来ているかどうか
+   * Case7: 「下に移動」が出来ているかどうか
    */
   bool testCase7(){
     Unit *unit = &unitList[0];
@@ -1615,7 +1626,7 @@ class CodevsTest{
   }
 
   /*
-   * 「左に移動」が出来ているかどうか
+   * Case8: 「左に移動」が出来ているかどうか
    */
   bool testCase8(){
     Unit *unit = &unitList[0];
@@ -1628,7 +1639,7 @@ class CodevsTest{
   }
 
   /*
-   * 「右に移動」が来ているかどうか
+   * Case9: 「右に移動」が来ているかどうか
    */
   bool testCase9(){
     Unit *unit = &unitList[0];
@@ -1641,7 +1652,7 @@ class CodevsTest{
   }
 
   /*
-   * 「生産可否判定」が出来ているかどうか
+   * Case10: 「生産可否判定」が出来ているかどうか
    */
   bool testCase10(){
     Unit *castel  = &unitList[0];
@@ -1719,7 +1730,7 @@ class CodevsTest{
   }
 
   /*
-   * ノードの作成が出来ているかどうか
+   * Case12: ノードの作成が出来ているかどうか
    */
   bool testCase12(){
     Node node = cv.createNode();
@@ -1783,7 +1794,7 @@ class CodevsTest{
   }
 
   /*
-   * ユニットの生存確認が出来ているかどうかの確認
+   * Case14: ユニットの生存確認が出来ているかどうかの確認
    */
   bool testCase14(){
     int unitId = 100;
@@ -1809,7 +1820,7 @@ class CodevsTest{
   }
 
   /*
-   * ユニットの削除が出来ているかどうかの確認
+   * Case15: ユニットの削除が出来ているかどうかの確認
    */
   bool testCase15(){
     cv.stageInitialize();
@@ -1832,7 +1843,7 @@ class CodevsTest{
   }
 
   /*
-   * ユニットが取れるアクションについて制限が取れている
+   * Case16: ユニットが取れるアクションについて制限が取れている
    */
   bool testCase16(){
     cv.stageInitialize();
@@ -1858,7 +1869,7 @@ class CodevsTest{
   }
 
   /*
-   * Case18: ロールバックが出来ているかどうか
+   * Case17: ロールバックが出来ているかどうか
    */
   bool testCase17(){
     cv.stageInitialize();
@@ -1908,9 +1919,23 @@ class CodevsTest{
     int unitId = 100;
     cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
 
+    unitId = 101;
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
+
+    unitId = 102;
+    cv.addMyUnit(unitId, 10, 10, 1980, WORKER);
+
     if(gameStage.visibleNodeCount != 41) return false;
 
-    cv.unitAction(&unitList[unitId], MOVE_UP);
+    cv.unitAction(&unitList[100], MOVE_UP);
+    if(gameStage.visibleNodeCount != 50) return false;
+
+    cv.unitAction(&unitList[101], MOVE_DOWN);
+    if(gameStage.visibleNodeCount != 59) return false;
+
+    cv.rollbackAction(&unitList[100], MOVE_UP);
+    cv.rollbackAction(&unitList[101], MOVE_DOWN);
+
     if(gameStage.visibleNodeCount != 41) return false;
 
     return true;
@@ -1960,11 +1985,6 @@ class CodevsTest{
     if(gameStage.openedNodeCount != 0) return false;
 
     cv.unitAction(&unitList[unitId], MOVE_DOWN, REAL);
-    /*
-       fprintf(stderr,"searchedNodeCount = %d\n", gameStage.searchedNodeCount);
-       fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
-       fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
-       */
 
     unitId = 101;
     cv.addMyUnit(unitId,  10, 10, 1980, WORKER);
@@ -2058,6 +2078,13 @@ class CodevsTest{
     Unit *unit = &unitList[unitId];
 
     if(unit->resourceY != 10 || unit->resourceX != 10) return false;
+    if(unit->mode != PICKING) return false;
+
+    gameStage.field[10][10].myUnitCount[WORKER] = 6;
+    unitId = 101;
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
+    unit = &unitList[unitId];
+    if(unit->mode == PICKING) return false;
 
     return true;
   }
@@ -2071,15 +2098,43 @@ class CodevsTest{
     int unitId = 100;
     cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
     Unit *worker = &unitList[unitId];
-    int wmp = cv.directUnitMovePriority(worker);
+    int workerMovePirority = cv.directUnitMovePriority(worker);
 
     unitId = 101;
     cv.addMyUnit(unitId, 11, 11, 2000, VILLAGE);
     Unit *village = &unitList[unitId];
-    int vmp = cv.directUnitMovePriority(village);
+    int villageMovePriority = cv.directUnitMovePriority(village);
 
-    if(wmp > vmp) return false;
+    unitId = 102;
+    cv.addMyUnit(unitId, 20, 20, 50000, CASTEL);
+    Unit *castel = &unitList[unitId];
+    int castelMovePriority = cv.directUnitMovePriority(castel);
 
+    if(workerMovePirority > villageMovePriority) return false;
+    if(villageMovePriority < castelMovePriority) return false;
+
+    return true;
+  }
+
+  /*
+   * Case27: 敵ユニットの追加ができているかどうか
+   */
+  bool testCase27(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+
+    cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
+
+    if(enemyActiveUnitList.size() != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * Case28: 試合状況が確認できているかどうか
+   */
+  bool testCase28(){
     return true;
   }
 };
