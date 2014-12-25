@@ -32,7 +32,7 @@ const int LEADER    = 8; // 戦闘隊長
 const int COLLIERY  = 9; // 炭鉱(資源マスにワーカーが5人いる状態)
 
 // 行動の基本優先順位
-const int movePriority[10] = { 5, 9, 8, 7, 0, 9, 4, 3, 2, 1};
+const int movePriority[10] = { 5, 9, 8, 7, 0, 10, 4, 3, 2, 1};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -193,11 +193,16 @@ struct GameStage{
 struct Coord{
   int y;
   int x;
+  int dist;
 
   Coord(int ypos = -1, int xpos = -1){
     y = ypos;
     x = xpos;
   }
+
+  bool operator >(const Coord &e) const{
+    return dist > e.dist;
+  }    
 };
 
 typedef pair<Coord, int> cell;
@@ -423,7 +428,7 @@ class Codevs{
       checkNode(unitId, y, x, unit.eyeRange);
 
       if(unit.mode == SEARCH){
-        checkStamp(y, x, unit.eyeRange * 2);
+        //checkStamp(y, x, unit.eyeRange * 2);
       }
     }
 
@@ -505,28 +510,34 @@ class Codevs{
     /*
      * 次の目的地を決める
      */
-    Coord directNextPoint(int ypos, int xpos){
+    Coord directNextPoint(Unit *unit){
       Coord bestCoord;
-      int bestUnknownPoint = MIN_VALUE;
-      int unknownPoint;
-      int dist;
 
-      for(int y = 0; y < HEIGHT; y++){
-        for(int x = 0; x < WIDTH; x++){
-          dist = calcManhattanDist(ypos, xpos, y, x);
+      queue<Coord> que;
+      que.push(Coord(unit->y, unit->x));
+      map<int, bool> checkList;
 
-          if(dist != 8) continue;
+      while(!que.empty()){
+        Coord coord = que.front(); que.pop();
 
-          unknownPoint = calcUnknownPoint(y,x);
+        if(checkList[coord.y*WIDTH+coord.x]) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
 
-          if(bestUnknownPoint < unknownPoint){
-            bestUnknownPoint = unknownPoint;
-            bestCoord = Coord(y,x);
-          }
+        Node *node = &gameStage.field[coord.y][coord.x];
+
+        if(!node->searched && node->markCount == 0){
+          return coord;
+        }
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+
+          if(!isWall(ny,nx)) que.push(Coord(ny,nx));
         }
       }
 
-      return bestCoord;
+      return Coord(99, 99);
     }
 
     /*
@@ -534,7 +545,7 @@ class Codevs{
      * 指定した座標の未知数を計算
      */
     int calcUnknownPoint(int ypos, int xpos){
-      int point = 0;
+      int point = calcManhattanDist(ypos, xpos, 0, 0);
 
       map<int, bool> checkList;
       queue<cell> que;
@@ -545,20 +556,27 @@ class Codevs{
         Coord coord = c.first;
         int dist = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || dist >= 4) continue;
+        if(isWall(coord.y, coord.x)){
+          point -= 100;
+          continue;
+        }
+        if(checkList[coord.y*WIDTH+coord.x] || dist >= 5) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        point += (gameStage.field[coord.y][coord.x].searched)? -10 : 1000; 
-        point -= 4 * gameStage.field[coord.y][coord.x].markCount;
+        Node *node = &gameStage.field[coord.y][coord.x];
+
+        //point += (gameStage.field[coord.y][coord.x].searched)? -10 : 1000; 
+        if(!node->searched){
+          point += gameStage.field[coord.y][coord.x].cost;
+        }
+
+        //point -= 4 * gameStage.field[coord.y][coord.x].markCount;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
           int nx = coord.x + dx[i];
-          if(!isWall(ny,nx)){
-            point -= 2;
-          }else{
-            que.push(cell(Coord(ny, nx), dist+1));
-          }
+
+          que.push(cell(Coord(ny, nx), dist+1));
         }
       }
 
@@ -573,6 +591,7 @@ class Codevs{
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       node.seenCount = 0;
+      node.cost = 0;
       node.stamp = 0;
       node.markCount = 0;
       node.resource = false;
@@ -621,9 +640,9 @@ class Codevs{
       unit->hp        = hp;
       unit->timestamp = turn;
 
-      checkNode(unitId, y, x, unit->eyeRange);
+      //checkNode(unitId, y, x, unit->eyeRange);
       if(unit->mode == SEARCH){
-        checkStamp(y, x, unit->eyeRange * 2);
+        //checkStamp(y, x, unit->eyeRange * 2);
       }
     }
 
@@ -653,8 +672,8 @@ class Codevs{
         unit->mode = directUnitMode(unit);
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
-        if(unit->mode == SEARCH && ((turn % 2 == 0) || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
-          Coord coord = directNextPoint(unit->y, unit->x);
+        if(unit->mode == SEARCH && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
+          Coord coord = directNextPoint(unit);
 
           unit->destY = coord.y;
           unit->destX = coord.x;
@@ -786,6 +805,7 @@ class Codevs{
      * 評価値の計算
      */
     int calcEvaluation(Unit *unit, int operation){
+      int centerDist = calcManhattanDist(unit->y, unit->x, 0, 0);
       int destDist = (unit->mode == SEARCH)? calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX) : 0;
       int stamp = gameStage.field[unit->y][unit->x].stamp;
 
@@ -796,7 +816,8 @@ class Codevs{
               if(operation == NO_MOVE){
                 return -10000;
               }else{
-                return -(destDist) + 100 * myResourceCount - 25 * stamp;
+                //return 100 * myResourceCount + calcUnknownPoint(unit->y, unit->x);
+                return 100 * myResourceCount + gameStage.openedNodeCount * 5 - destDist;
               }
               break;
             case PICKING:
@@ -877,7 +898,7 @@ class Codevs{
      * 城が動いていない時の評価値
      */
     int calcNoneCastelEvaluation(Unit *unit, int operation){
-      if(operation == CREATE_WORKER && turn <= 20){
+      if(operation == CREATE_WORKER && turn <= 16){
         return 100;
       }else{
         return 0;
@@ -890,6 +911,7 @@ class Codevs{
     int aroundMyUnitDist(Unit *unit){
       int dist;
       int sumDist = 0;
+      priority_queue< Coord, vector<Coord>, greater<Coord>  > que;
 
       set<int>::iterator it = myActiveUnitList.begin();
 
@@ -897,22 +919,60 @@ class Codevs{
         Unit *other = &unitList[*it];
 
         if(other->movable){
-          dist = min(10, calcManhattanDist(unit->y, unit->x, other->y, other->x));
-
-          sumDist += dist;
+          Coord coord(other->y, other->x);
+          dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
+          coord.dist = dist;
         }
 
         it++;
+      }
+
+      for(int i = 0; i < 2 && !que.empty(); i++){
+        sumDist += que.top().dist; que.pop();
       }
 
       return sumDist;
     }
 
     /*
-     * コストを付ける
+     * コストを取得する
      */
-    void checkCost(int ypos, int xpos){
-      int cost = 3;
+    int checkCost(int ypos, int xpos, int dist = 3){
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), dist));
+      int cost = 0;
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist < 0) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        if(gameStage.field[coord.y][coord.x].searched || gameStage.field[coord.y][coord.x].markCount > 0){
+          cost -= 3;
+        }else{
+          cost += 8;
+        }
+
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), dist-1));
+        }
+      }
+
+      return cost;
+    }
+
+    /*
+     * マークを付ける
+     */
+    void checkMark(int ypos, int xpos){
+      int cost = 8;
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), cost));
@@ -922,10 +982,11 @@ class Codevs{
         Coord coord = c.first;
         int cost = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || cost <= 0) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || cost < 0) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        gameStage.field[coord.y][coord.x].cost += cost;
+        gameStage.field[coord.y][coord.x].markCount += 1;
+        //gameStage.field[coord.y][coord.x].cost -= 1;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -936,10 +997,10 @@ class Codevs{
     }
 
     /*
-     * マークを付ける
+     * マークを外す
      */
-    void checkMark(int ypos, int xpos){
-      int cost = 5;
+    void uncheckMark(int ypos, int xpos){
+      int cost = 8;
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), cost));
@@ -949,10 +1010,11 @@ class Codevs{
         Coord coord = c.first;
         int cost = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || cost <= 0) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || cost < 0) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        gameStage.field[coord.y][coord.x].markCount += 1;
+        gameStage.field[coord.y][coord.x].markCount -= 1;
+        //gameStage.field[coord.y][coord.x].cost -= 1;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -973,19 +1035,6 @@ class Codevs{
           if(isWall(y,x)) continue;
 
           gameStage.field[y][x].stamp += 1;
-        }
-      }
-    }
-
-    /*
-     * 未知の探索部分についてコストを計算
-     */
-    void unknownNode(){
-      for(int y = 0; y < HEIGHT; y++){
-        for(int x = 0; x < WIDTH; x++){
-          if(!gameStage.field[y][x].searched){
-            checkCost(y,x);
-          }
         }
       }
     }
@@ -1017,9 +1066,10 @@ class Codevs{
 
           node->seenCount = 0;
           node->cost = 0;
-          if(turn % 4 == 0){
+          if(turn % 10 == 0){
             node->markCount = 0;
           }
+          node->seenMembers.clear();
           node->opened = false;
           node->stamp = 0;
 
@@ -1041,9 +1091,6 @@ class Codevs{
 
         // フィールドのクリア
         clearField();
-
-        // コストをつける
-        unknownNode();
 
         // 各ターンで行う処理(主に入力の処理)
         eachTurnProc();
@@ -1093,8 +1140,12 @@ class Codevs{
 
           gameStage.field[y][x].seenMembers.insert(unitId);
           gameStage.field[y][x].seenCount += 1;
+          if(unitList[unitId].type == WORKER){
+            gameStage.field[y][x].cost -= 1;
+          }
 
           if(!gameStage.field[y][x].searched){
+            //fprintf(stderr,"searchedNodeCount = %d\n", gameStage.searchedNodeCount);
             gameStage.searchedNodeCount += 1;
             gameStage.field[y][x].searched = true;
           }
@@ -1386,9 +1437,11 @@ class Codevs{
         Unit *unit = &unitList[mp.unitId];
 
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
+        gameStage.searchedNodeCount = 0;
+
         tempGameStage = gameStage;
 
-        fprintf(stderr, "turn = %d, unitId = %d mode = %d, type = %d\n", turn, unit->id, unit->mode, unit->type);
+        fprintf(stderr, "turn = %d, unitId = %d, y = %d, x = %d, mode = %d, type = %d\n", turn, unit->id, unit->y, unit->x, unit->mode, unit->type);
 
         for(int operation = 0; operation < OPERATION_MAX; operation++){
 
@@ -1434,9 +1487,15 @@ class Codevs{
 
           // 確定した行動はそのままにする
           unitAction(unit, bestOperation.operation, REAL);
+          fprintf(stderr,"unitId = %d, action = %d, value = %d, searchedCount = %d\n", unit->id, bestOperation.operation, bestOperation.evaluation, gameStage.searchedNodeCount);
+
+          if(unit->mode == SEARCH){
+            checkStamp(unit->y, unit->x, unit->eyeRange * 2);
+          }
 
           // SEARCHモードのユニットが目的地に到達した場合は、目的地の座標をリセット
           if(unit->mode == SEARCH && (unit->y == unit->destY && unit->x == unit->destX)){
+            uncheckMark(unit->destY, unit->destX);
             unit->destY = UNDEFINED;
             unit->destX = UNDEFINED;
           }
@@ -1767,6 +1826,7 @@ class CodevsTest{
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenMembers.size() != 0) return false;
     if(node.seenCount != 0) return false;
+    if(node.cost != 0) return false;
     if(node.stamp != 0) return false;
     if(node.markCount != 0) return false;
     if(node.resource) return false;
