@@ -29,6 +29,7 @@ const int VILLAGE   = 5; // 村
 const int BASE      = 6; // 拠点
 const int COMBATANT = 7; // 戦闘員
 const int LEADER    = 8; // 戦闘隊長
+const int COLLIERY  = 9; // 炭鉱(資源マスにワーカーが5人いる状態)
 
 // 行動の基本優先順位
 const int movePriority[10] = { 5, 9, 8, 7, 0, 9, 4, 3, 2, 1};
@@ -416,6 +417,7 @@ class Codevs{
 
       unitList[unitId] = unit;
       unitList[unitId].mode = directFirstMode(&unitList[unitId]);
+      unitList[unitId].role = directUnitRole(&unitList[unitId]);
       myActiveUnitList.insert(unitId);
       unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
@@ -427,6 +429,7 @@ class Codevs{
 
     /*
      * 自軍のユニットを削除する
+     * unit: ユニット
      */
     void removeMyUnit(Unit *unit){
       myActiveUnitList.erase(unit->id);
@@ -1528,6 +1531,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase26:\t%s\n", testCase26()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase27:\t%s\n", testCase27()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase28:\t%s\n", testCase28()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase29:\t%s\n", testCase29()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2173,6 +2177,22 @@ class CodevsTest{
     cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
     cv.updateGameSituation();
     if(gameStage.gameSituation != WARNING) return false;
+
+    return true;
+  }
+
+  /*
+   * Case29: ユニットの役割がちゃんと割り振れているかどうか
+   */
+  bool testCase29(){
+    cv.stageInitialize(); 
+
+    int unitId = 100;
+
+    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
+    Unit *worker = &unitList[unitId];
+
+    if(worker->role != WORKER) return false;
 
     return true;
   }
