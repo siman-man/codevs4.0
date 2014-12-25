@@ -19,14 +19,16 @@ using namespace std;
 
 typedef long long ll;
 
-// 枠割一覧
-const int WORKER  = 0; // ワーカー
-const int KNIGHT  = 1; // ナイト
-const int FIGHER  = 2; // ファイター
-const int ASSASIN = 3; // アサシン
-const int CASTEL  = 4; // 城
-const int VILLAGE = 5; // 村
-const int BASE    = 6; // 拠点
+// 役割一覧
+const int WORKER    = 0; // ワーカー
+const int KNIGHT    = 1; // ナイト
+const int FIGHER    = 2; // ファイター
+const int ASSASIN   = 3; // アサシン
+const int CASTEL    = 4; // 城
+const int VILLAGE   = 5; // 村
+const int BASE      = 6; // 拠点
+const int COMBATANT = 7; // 戦闘員
+const int LEADER    = 8; // 戦闘隊長
 
 // 行動の基本優先順位
 const int movePriority[10] = { 5, 9, 8, 7, 0, 9, 4, 3, 2, 1};
@@ -47,6 +49,8 @@ const int CREATE_BASE     = 11; // 拠点を生産
 
 // 試合状況一覧
 const int OPENING = 0;  // 序盤戦
+const int WARNING = 1;  // 敵ユニットを検知
+const int DANGER  = 2;  // 自軍の白の視野に敵を確認
 
 
 // ユニットの行動タイプ
@@ -61,6 +65,7 @@ const int STAY    = 5;  // 待機命令
 const int OPERATION_MAX = 12;   // 行動の種類
 const int UNIT_MAX = 7;         // ユニットの種類
 const int COST_MAX = 99999;     // コストの最大値(城を事実上作れなくする)
+const int MIN_VALUE = -999999;  // 最小値
 
 // 座標計算で使用する配列
 const int dy[5] = {0,-1, 1, 0, 0};
@@ -341,11 +346,6 @@ class Codevs{
       for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
-        // 自軍の城の座標を更新
-        if(unitType == CASTEL){
-          myCastelCoordY = y;
-          myCastelCoordX = x;
-        }
 
         gameStage.field[y][x].myUnitCount[unitType] += 1;
 
@@ -363,12 +363,6 @@ class Codevs{
       // 敵軍ユニットの詳細
       for(int i = 0; i < enemyAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
-
-        // 敵軍の城の座標を更新
-        if(unitType == CASTEL){
-          enemyCastelCoordY = y;
-          enemyCastelCoordX = x;
-        }
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
@@ -414,6 +408,12 @@ class Codevs{
       unit.movable      = unitCanMove[unitType];
       unit.timestamp    = turn;
 
+      // 自軍の城の座標を更新
+      if(unitType == CASTEL){
+        myCastelCoordY = y;
+        myCastelCoordX = x;
+      }
+
       unitList[unitId] = unit;
       unitList[unitId].mode = directFirstMode(&unitList[unitId]);
       myActiveUnitList.insert(unitId);
@@ -452,6 +452,12 @@ class Codevs{
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
       unit.timestamp    = turn;
+
+      // 敵軍の城の座標を更新
+      if(unitType == CASTEL){
+        enemyCastelCoordY = y;
+        enemyCastelCoordX = x;
+      }
 
       unitList[unitId] = unit;
       enemyActiveUnitList.insert(unitId);
@@ -498,7 +504,7 @@ class Codevs{
      */
     Coord directNextPoint(int ypos, int xpos){
       Coord bestCoord;
-      int bestUnknownPoint = -999999;
+      int bestUnknownPoint = MIN_VALUE;
       int unknownPoint;
       int dist;
 
@@ -688,6 +694,8 @@ class Codevs{
     void updateGameSituation(){
       if(enemyActiveUnitList.size() == 0){
         gameStage.gameSituation = OPENING;
+      }else{
+        gameStage.gameSituation = WARNING;
       }
     }
 
@@ -702,7 +710,7 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      return movePriority[unit->type];
+      return 1000 * movePriority[unit->type] - calcManhattanDist(unit->y, unit->x, 79, 79);
     }
 
     /*
@@ -731,6 +739,9 @@ class Codevs{
 
     /*
      * 一番距離が近いかの確認
+     *       y: 調査したいノードのy座標
+     *       x: 調査したいノードのx座標
+     * minDist: 現在の最短(調べたいノードとユニットの現在の距離)
      */
     bool checkMinDist(int y, int x, int minDist){
       set<int>::iterator it = myActiveUnitList.begin();
@@ -739,6 +750,7 @@ class Codevs{
         Unit *unit = &unitList[(*it)];
         int dist = calcManhattanDist(unit->y, unit->x, y, x);
 
+        // 他に最短距離なユニットがいる場合はfalseを返す
         if(minDist > dist && unit->mode != PICKING) return false;
 
         it++;
@@ -2117,8 +2129,14 @@ class CodevsTest{
     Unit *castel = &unitList[unitId];
     int castelMovePriority = cv.directUnitMovePriority(castel);
 
+    unitId = 103;
+    cv.addMyUnit(unitId, 50, 50, 2000, WORKER);
+    Unit *worker2 = &unitList[unitId];
+    int workerMovePirority2 = cv.directUnitMovePriority(worker2);
+
     if(workerMovePirority > villageMovePriority) return false;
     if(villageMovePriority < castelMovePriority) return false;
+    if(workerMovePirority >= workerMovePirority2) return false;
 
     return true;
   }
@@ -2132,8 +2150,12 @@ class CodevsTest{
     int unitId = 100;
 
     cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
-
     if(enemyActiveUnitList.size() != 1) return false;
+
+    unitId = 101;
+    cv.addEnemyUnit(unitId, 80, 80, 50000, CASTEL);
+    if(enemyActiveUnitList.size() != 2) return false;
+    if(enemyCastelCoordY != 80 && enemyCastelCoordX != 80) return false;
 
     return true;
   }
@@ -2144,7 +2166,13 @@ class CodevsTest{
   bool testCase28(){
     cv.stageInitialize();
 
+    cv.updateGameSituation();
     if(gameStage.gameSituation != OPENING) return false;
+
+    int unitId = 100;
+    cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
+    cv.updateGameSituation();
+    if(gameStage.gameSituation != WARNING) return false;
 
     return true;
   }
