@@ -157,6 +157,11 @@ struct MovePriority{
   int unitId;   // ユニットID
   int priority; // 優先度
 
+  MovePriority(int id = 0, int value = 0){
+    unitId = id;
+    priority = value;
+  }
+
   bool operator >(const MovePriority &e) const{
     return priority < e.priority;
   }    
@@ -593,7 +598,7 @@ class Codevs{
         }
       }
 
-      return Coord(99, 99);
+      return Coord(80, 80);
     }
 
     /*
@@ -765,7 +770,7 @@ class Codevs{
           Coord coord = directTargetPoint(unit->y, unit->x, 99, 99);
           //Coord coord = directNextPoint(unit);
 
-          if(enemyCastelCoordY != UNDEFINED){
+          if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
             unit->destY = enemyCastelCoordY;
             unit->destX = enemyCastelCoordX;
           }else{
@@ -784,6 +789,8 @@ class Codevs{
      * ユニットの状態を決定する
      */
     int directUnitMode(Unit *unit){
+      Node *node = &gameStage.field[unit->y][unit->x];
+
       switch(unit->type){
         case WORKER:
           if(unit->mode == PICKING || pickModeCheck(unit)){
@@ -797,10 +804,12 @@ class Codevs{
         case FIGHER:
           break;
         case ASSASIN:
-          if(unit->mode == STAY){
+          if(unit->mode == STAY && node->myUnitCount[ASSASIN] <= 4){
             return STAY;
+          }else if(node->myUnitCount[ASSASIN] >= 5){
+            return DESTROY;
           }else{
-            return COMBATANT;
+            return STAY;
           }
           break;
         default:
@@ -1038,17 +1047,37 @@ class Codevs{
      * リーダ時の行動パターン
      */
     int calcLeaderEvaluation(Unit *unit, int operation){
-      if(unit->mode == ONRUSH){
-        return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
-      }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 4){
-        return -1 * calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
-        if(operation == NO_MOVE){
-          return 100;
-        }else{
-          return 0;
-        }
-      }else{
-        return -1 * calcManhattanDist(unit->y, unit->x, 99, 99);
+      switch(unit->mode){
+        case STAY:
+          if(operation != NO_MOVE){
+            return -100;
+          }else{
+            return 0;
+          }
+          break;
+        case DESTROY:
+          if(unit->role == LEADER){
+            if(gameStage.gameSituation == ONRUSH){
+              return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+            }else{
+              return -1 * calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
+            }
+          }else{
+            Unit *leader = &unitList[unit->leaderId];
+            return -1 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x);
+          }
+          break;
+        default:
+          if(gameStage.gameSituation == ONRUSH){
+            return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+          }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 4){
+            return -1 * calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
+          }else if(gameStage.gameSituation == ONRUSH){
+            return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+          }else{
+            return -1 * calcManhattanDist(unit->y, unit->x, 0, 0);
+          }
+          break;
       }
     }
 
@@ -1056,8 +1085,21 @@ class Codevs{
      *
      */
     int calcCombatEvaluation(Unit *unit, int operation){
+      if(isAlive(unit->leaderId)){
+        Unit *leader = &unitList[unit->leaderId];
+        return -1 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x);
+      }else if(gameStage.gameSituation == ONRUSH){
+        return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+      }
 
-      return 0;
+      return -1000;
+    }
+
+    /*
+     * 自軍のユニットが生きているかどうかの確認
+     */
+    bool isAlive(int unitId){
+      return (myActiveUnitList.find(unitId) != myActiveUnitList.end());
     }
 
     /*
@@ -1581,10 +1623,7 @@ class Codevs{
 
       // 各ユニット毎に処理を行う
       while(it != myActiveUnitList.end()){
-        Unit *unit = &unitList[*it];
-        MovePriority mp;
-        mp.unitId = (*it);
-        mp.priority = directUnitMovePriority(unit);
+        MovePriority mp(*it, directUnitMovePriority(&unitList[*it]));
         prique.push(mp);
         it++;
       }
@@ -1593,37 +1632,7 @@ class Codevs{
         MovePriority mp = prique.top(); prique.pop();
         Unit *unit = &unitList[mp.unitId];
 
-        priority_queue<Operation, vector<Operation>, greater<Operation> > que;
-        gameStage.searchedNodeCount = 0;
-
-        tempGameStage = gameStage;
-
-        fprintf(stderr, "turn = %d, unitId = %d, y = %d, x = %d, mode = %d, type = %d\n", turn, unit->id, unit->y, unit->x, unit->mode, unit->type);
-
-        for(int operation = 0; operation < OPERATION_MAX; operation++){
-
-          if(!OPERATION_LIST[unit->type][operation]) continue;
-
-          // 行動が成功した時だけ評価を行う
-          if(unitAction(unit, operation)){
-
-            Operation ope;
-            ope.unitId = unit->id;
-            ope.operation = operation;
-            ope.evaluation = calcEvaluation(unit, operation);
-
-            // 行動を元に戻す
-            rollbackAction(unit, operation);
-
-            que.push(ope);
-          }else{
-            //fprintf(stderr,"Failed operation = %d\n", operation);
-          }
-
-          gameStage = tempGameStage;
-        }
-
-        Operation bestOperation = que.top();
+        Operation bestOperation = directUnitOperation(unit);
 
         // 行動なし以外はリストに入れる
         if(bestOperation.operation != NONE){
@@ -1631,6 +1640,7 @@ class Codevs{
 
           // 確定した行動はそのままにする
           unitAction(unit, bestOperation.operation, REAL);
+          if(unit->type == ASSASIN)
           fprintf(stderr,"unitId = %d, action = %d, value = %d, searchedCount = %d\n", unit->id, bestOperation.operation, bestOperation.evaluation, gameStage.searchedNodeCount);
 
           if(unit->mode == SEARCH){
@@ -1660,6 +1670,36 @@ class Codevs{
      * 命令を決定する
      */
     Operation directUnitOperation(Unit *unit){
+      priority_queue<Operation, vector<Operation>, greater<Operation> > que;
+      gameStage.searchedNodeCount = 0;
+
+      tempGameStage = gameStage;
+
+      if(unit->type == ASSASIN)
+      fprintf(stderr, "turn = %d, unitId = %d, y = %d, x = %d, mode = %d, type = %d\n", turn, unit->id, unit->y, unit->x, unit->mode, unit->type);
+
+      for(int operation = 0; operation < OPERATION_MAX; operation++){
+        if(!OPERATION_LIST[unit->type][operation]) continue;
+
+        // 行動が成功した時だけ評価を行う
+        if(unitAction(unit, operation)){
+          Operation ope;
+          ope.unitId = unit->id;
+          ope.operation = operation;
+          ope.evaluation = calcEvaluation(unit, operation);
+
+          // 行動を元に戻す
+          rollbackAction(unit, operation);
+
+          que.push(ope);
+        }else{
+          //fprintf(stderr,"Failed operation = %d\n", operation);
+        }
+
+        gameStage = tempGameStage;
+      }
+
+      return que.top();
     }
 
     /*
@@ -1753,6 +1793,8 @@ class CodevsTest{
     fprintf(stderr, "TestCase27:\t%s\n", testCase27()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase28:\t%s\n", testCase28()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase29:\t%s\n", testCase29()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase30:\t%s\n", testCase30()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase31:\t%s\n", testCase31()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2419,9 +2461,36 @@ class CodevsTest{
   bool testCase30(){
     cv.stageInitialize();
 
-    int unitId = 100;
+    Unit *unit = cv.createDummyUnit(100, 10, 10, 5000, WORKER);
+    cv.resetDestPoint(unit);
 
-    cv.addMyUnit(unitId, 10, 10, 5000, WORKER);
+    if(unit->destY != UNDEFINED || unit->destX != UNDEFINED) return false;
+
+    return true;
+  }
+
+  /*
+   * Case31: 破壊モードに移行出来ているかどうか
+   */
+  bool testCase31(){
+    cv.stageInitialize();
+
+    Unit *assasin = cv.createDummyUnit(100, 10, 10, 5000, ASSASIN);
+    gameStage.field[10][10].myUnitCount[ASSASIN] = 5;
+
+    assasin->mode = cv.directUnitMode(assasin);
+
+    if(assasin->mode != DESTROY) return false;
+
+    return true;
+  }
+
+  /*
+   * Case32: 自軍のユニットが生きているかの確認
+   */
+  bool testCase32(){
+
+    return true;
   }
 };
 
