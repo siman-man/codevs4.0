@@ -135,6 +135,23 @@ struct Operation{
   }    
 };
 
+// 最良探索で使用する
+struct Cell{
+  int y;
+  int x;
+  int cost;
+
+  Cell(int ypos, int xpos, int c = -1){
+    y = ypos;
+    x = xpos;
+    cost = c;
+  }
+
+  bool operator >(const Cell &e) const{
+    return cost > e.cost;
+  }    
+};
+
 // 行動の優先順位
 struct MovePriority{
   int unitId;   // ユニットID
@@ -154,6 +171,7 @@ struct Unit{
   int role;               // 役割
   int destY;              // 目的地のy座標
   int destX;              // 目的地のx座標
+  int leaderId;           // 隊長のID
   int resourceY;          // 目的地(資源)のy座標
   int resourceX;          // 目的地(資源)のx座標
   int createWorkerCount;  // 生産したワーカーの数
@@ -355,7 +373,6 @@ class Codevs{
       for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
-
         gameStage.field[y][x].myUnitCount[unitType] += 1;
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
@@ -412,6 +429,7 @@ class Codevs{
       unit.destY        = UNDEFINED;
       unit.destX        = UNDEFINED;
       unit.createWorkerCount = 0;
+      unit.leaderId     = UNDEFINED;
       unit.attackRange  = unitAttackRange[unitType];
       unit.eyeRange     = unitEyeRange[unitType];
       unit.movable      = unitCanMove[unitType];
@@ -430,22 +448,31 @@ class Codevs{
       unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
 
-      if(unit.mode == SEARCH){
+      if(unitList[unitId].mode == SEARCH){
         //checkStamp(y, x, unit.eyeRange * 2);
       }
-      if(unit.role == COMBATANT){
-        set<int>::iterator it = myActiveUnitList.begin();
 
-        while(it != myActiveUnitList.end()){
-          Unit *other = &unitList[*it];
+      if(unitList[unitId].role == COMBATANT){
+        searchLeader(&unitList[unitId]);
+      }
+    }
 
-          if(calcManhattanDist(unit.y, unit.x, other->y, other->x) == 0 && other->mode == LEADER){
-            unitList[unitId].destY = other->y;
-            unitList[unitId].destX = other->x;
-          }
+    /*
+     * リーダを探し出す
+     */
+    void searchLeader(Unit *unit){
+      fprintf(stderr,"searchLeader =>\n");
+      set<int>::iterator it = myActiveUnitList.begin();
 
-          it++;
+      while(it != myActiveUnitList.end()){
+        Unit *other = &unitList[*it];
+
+        if(calcManhattanDist(unit->y, unit->x, other->y, other->x) == 0 && other->role == LEADER){
+          unit->leaderId = other->id;
+          return;
         }
+
+        it++;
       }
     }
 
@@ -518,10 +545,10 @@ class Codevs{
           return NONE;
           break;
         case ASSASIN:
-          if(node->myUnitCount[ASSASIN] == 1){
-            return SEARCH;
+          if(node->myUnitCount[ASSASIN] <= 4){
+            return STAY;
           }else{
-            return SEARCH;
+            return DESTROY;
           }
           break;
         default:
@@ -536,8 +563,6 @@ class Codevs{
      */
     Coord directNextPoint(Unit *unit){
       Coord bestCoord;
-
-      if(turn >= 250) return Coord(80, 80);
 
       if(gameStage.gameSituation == ONRUSH){
         assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordY != UNDEFINED);
@@ -570,6 +595,39 @@ class Codevs{
 
       return Coord(99, 99);
     }
+
+    /*
+     * 目的地を決めて探索する
+     */
+    Coord directTargetPoint(int y, int x, int targetY, int targetX){
+      map<int, bool> checkList;
+      priority_queue< Cell, vector<Cell>, greater<Cell> > que;
+
+      que.push(Cell(y, x, 0));
+
+      while(!que.empty()){
+        Cell cell = que.top(); que.pop();
+
+        if(checkList[cell.y*WIDTH+cell.x]) continue;
+        checkList[cell.y*WIDTH+cell.x] = true;
+
+        Node *node = &gameStage.field[cell.y][cell.x];
+
+        if(!node->searched && node->markCount == 0){
+          return Coord(cell.y, cell.x);
+        }
+
+        for(int i = 1; i < 5; i++){
+          int ny = cell.y + dy[i];
+          int nx = cell.x + dx[i];
+
+          if(!isWall(ny,nx)){
+            int nc = calcManhattanDist(ny, nx, targetY, targetX);
+            que.push(Cell(ny, nx, cell.cost + nc));
+          }
+        }
+      }
+    };
 
     /*
      * 未知領域の計算
@@ -704,7 +762,8 @@ class Codevs{
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
         if(unit->mode == SEARCH && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
-          Coord coord = directNextPoint(unit);
+          Coord coord = directTargetPoint(unit->y, unit->x, 99, 99);
+          //Coord coord = directNextPoint(unit);
 
           if(enemyCastelCoordY != UNDEFINED){
             unit->destY = enemyCastelCoordY;
@@ -738,11 +797,9 @@ class Codevs{
         case FIGHER:
           break;
         case ASSASIN:
-          if(unit->mode == LEADER){
-            return SEARCH;
-            return LEADER;
+          if(unit->mode == STAY){
+            return STAY;
           }else{
-            return SEARCH;
             return COMBATANT;
           }
           break;
@@ -785,7 +842,7 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      return 1000 * movePriority[unit->type] - calcManhattanDist(unit->y, unit->x, 79, 79);
+      return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 79, 79);
     }
 
     /*
@@ -925,6 +982,8 @@ class Codevs{
         //fprintf(stderr,"Base Count = %d\n", node->myUnitCount[BASE]);
         if(gameStage.gameSituation == WARNING && operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
           return 10000;
+        }else if(operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
+          return 1000;
         }else if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
           return 100;
         }else{
@@ -932,19 +991,6 @@ class Codevs{
         }
       }else{
         return -calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
-      }
-    }
-
-    /*
-     * NONE
-     */
-    int calcNoneEvaluation(Unit *unit, int operation){
-      Node *node = &gameStage.field[unit->y][unit->x];
-
-      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5){
-        return 100;
-      }else{
-        return 0;
       }
     }
 
@@ -1081,7 +1127,7 @@ class Codevs{
      * マークを付ける
      */
     void checkMark(int ypos, int xpos){
-      int cost = 8;
+      int cost = 4;
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), cost));
@@ -1543,12 +1589,9 @@ class Codevs{
         it++;
       }
 
-
       while(!prique.empty()){
         MovePriority mp = prique.top(); prique.pop();
         Unit *unit = &unitList[mp.unitId];
-
-        if(unit->type == WORKER && gameStage.gameSituation == ONRUSH) continue;
 
         priority_queue<Operation, vector<Operation>, greater<Operation> > que;
         gameStage.searchedNodeCount = 0;
@@ -1560,10 +1603,6 @@ class Codevs{
         for(int operation = 0; operation < OPERATION_MAX; operation++){
 
           if(!OPERATION_LIST[unit->type][operation]) continue;
-          //fprintf(stderr,"operation = %d\n", operation);
-          int onc = gameStage.openedNodeCount;
-          int snc = gameStage.searchedNodeCount;
-          int vnc = gameStage.visibleNodeCount;
 
           // 行動が成功した時だけ評価を行う
           if(unitAction(unit, operation)){
@@ -1573,10 +1612,6 @@ class Codevs{
             ope.operation = operation;
             ope.evaluation = calcEvaluation(unit, operation);
 
-            /*
-               fprintf(stderr,"y = %d, x = %d\n", unit->y, unit->x);
-               fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
-               */
             // 行動を元に戻す
             rollbackAction(unit, operation);
 
@@ -1586,11 +1621,6 @@ class Codevs{
           }
 
           gameStage = tempGameStage;
-          // 元に戻っていない場合はエラー
-          //fprintf(stderr,"vnc = %d, gameStage.visibleNodeCount = %d\n", vnc, gameStage.visibleNodeCount);
-          assert(snc == gameStage.searchedNodeCount);
-          assert(vnc == gameStage.visibleNodeCount);
-          assert(onc == gameStage.openedNodeCount);
         }
 
         Operation bestOperation = que.top();
@@ -1609,14 +1639,27 @@ class Codevs{
 
           // SEARCHモードのユニットが目的地に到達した場合は、目的地の座標をリセット
           if(unit->mode == SEARCH && (unit->y == unit->destY && unit->x == unit->destX)){
-            uncheckMark(unit->destY, unit->destX);
-            unit->destY = UNDEFINED;
-            unit->destX = UNDEFINED;
+            resetDestPoint(unit);
           }
         }
       }
 
       return operationList;
+    }
+
+    /*
+     * 目的地のリセットを行う
+     */
+    void resetDestPoint(Unit *unit){
+      uncheckMark(unit->destY, unit->destX);
+      unit->destY = UNDEFINED;
+      unit->destX = UNDEFINED;
+    }
+
+    /*
+     * 命令を決定する
+     */
+    Operation directUnitOperation(Unit *unit){
     }
 
     /*
@@ -1665,6 +1708,11 @@ class Codevs{
         }
         fprintf(stderr, "\n");
       }
+    }
+
+    Unit* createDummyUnit(int unitId, int y, int x, int hp, int unitType){
+      addMyUnit(unitId, y, x, hp, unitType);
+      return &unitList[unitId];
     }
 };
 
@@ -2228,14 +2276,10 @@ class CodevsTest{
   bool testCase23(){
     cv.stageInitialize();
 
-    int unitId = 100;
     myResourceCount = COST_MAX;
-    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
-    unitId = 101;
-    cv.addMyUnit(unitId, 11, 11, 2000, WORKER);
 
-    Unit *unitA = &unitList[100];
-    Unit *unitB = &unitList[101];
+    Unit *unitA = cv.createDummyUnit(100, 10, 10, 2000, WORKER);
+    Unit *unitB = cv.createDummyUnit(101, 11, 11, 2000, WORKER);
     if(unitA->mode != SEARCH) return false;
 
     cv.addResourceNode(unitA->y+3, unitA->x+3);
@@ -2269,20 +2313,16 @@ class CodevsTest{
    */
   bool testCase25(){
     cv.stageInitialize();
-    int unitId = 100;
 
     cv.addResourceNode(10, 10);
-    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
 
-    Unit *unit = &unitList[unitId];
+    Unit *unit = cv.createDummyUnit(100, 10, 10, 2000, WORKER);
 
     if(unit->resourceY != 10 || unit->resourceX != 10) return false;
     if(unit->mode != PICKING) return false;
 
     gameStage.field[10][10].myUnitCount[WORKER] = 6;
-    unitId = 101;
-    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
-    unit = &unitList[unitId];
+    unit = cv.createDummyUnit(101, 10, 10, 2000, WORKER);
     if(unit->mode == PICKING) return false;
 
     return true;
@@ -2294,29 +2334,26 @@ class CodevsTest{
   bool testCase26(){
     cv.stageInitialize(); 
 
-    int unitId = 100;
-    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
-    Unit *worker = &unitList[unitId];
+    Unit *worker = cv.createDummyUnit(100, 10, 10, 2000, WORKER);
     int workerMovePirority = cv.directUnitMovePriority(worker);
 
-    unitId = 101;
-    cv.addMyUnit(unitId, 11, 11, 2000, VILLAGE);
-    Unit *village = &unitList[unitId];
+    Unit *village = cv.createDummyUnit(101, 11, 11, 2000, VILLAGE);
     int villageMovePriority = cv.directUnitMovePriority(village);
 
-    unitId = 102;
-    cv.addMyUnit(unitId, 20, 20, 50000, CASTEL);
-    Unit *castel = &unitList[unitId];
+    Unit *castel = cv.createDummyUnit(102, 20, 20, 50000, CASTEL);
     int castelMovePriority = cv.directUnitMovePriority(castel);
 
-    unitId = 103;
-    cv.addMyUnit(unitId, 50, 50, 2000, WORKER);
-    Unit *worker2 = &unitList[unitId];
+    Unit *worker2 = cv.createDummyUnit(103, 50, 50, 2000, WORKER);
     int workerMovePirority2 = cv.directUnitMovePriority(worker2);
+
+    Unit *assasin = cv.createDummyUnit(104, 40, 40, 5000, ASSASIN);
+    assasin->role = LEADER;
+    int leaderMovePriority = cv.directUnitMovePriority(assasin);
 
     if(workerMovePirority > villageMovePriority) return false;
     if(villageMovePriority < castelMovePriority) return false;
     if(workerMovePirority >= workerMovePirority2) return false;
+    if(leaderMovePriority < villageMovePriority) return false;
 
     return true;
   }
@@ -2327,13 +2364,10 @@ class CodevsTest{
   bool testCase27(){
     cv.stageInitialize();
 
-    int unitId = 100;
-
-    cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
+    cv.addEnemyUnit(100, 10, 10, 2000, WORKER);
     if(enemyActiveUnitList.size() != 1) return false;
 
-    unitId = 101;
-    cv.addEnemyUnit(unitId, 80, 80, 50000, CASTEL);
+    cv.addEnemyUnit(101, 80, 80, 50000, CASTEL);
     if(enemyActiveUnitList.size() != 2) return false;
     if(enemyCastelCoordY != 80 && enemyCastelCoordX != 80) return false;
 
@@ -2349,8 +2383,7 @@ class CodevsTest{
     cv.updateGameSituation();
     if(gameStage.gameSituation != OPENING) return false;
 
-    int unitId = 100;
-    cv.addEnemyUnit(unitId, 10, 10, 2000, WORKER);
+    cv.addEnemyUnit(100, 10, 10, 2000, WORKER);
     cv.updateGameSituation();
     if(gameStage.gameSituation != WARNING) return false;
 
@@ -2363,14 +2396,32 @@ class CodevsTest{
   bool testCase29(){
     cv.stageInitialize(); 
 
-    int unitId = 100;
-
-    cv.addMyUnit(unitId, 10, 10, 2000, WORKER);
-    Unit *worker = &unitList[unitId];
+    Unit *worker = cv.createDummyUnit(100, 10, 10, 2000, WORKER);
 
     if(worker->role != WORKER) return false;
 
+    gameStage.field[10][10].myUnitCount[ASSASIN] = 1;
+    Unit *assasin = cv.createDummyUnit(101, 10, 10, 5000, ASSASIN);
+    fprintf(stderr, "unit role = %d\n", assasin->role);
+    if(assasin->role != LEADER) return false;
+
+    gameStage.field[10][10].myUnitCount[ASSASIN] = 2;
+    Unit *assasin2 = cv.createDummyUnit(102, 10, 10, 5000, ASSASIN);
+    if(assasin2->role != COMBATANT) return false;
+    if(assasin2->leaderId != 101) return false;
+
     return true;
+  }
+
+  /*
+   * Case30: 目的地のリセットが出来ているかどうか
+   */
+  bool testCase30(){
+    cv.stageInitialize();
+
+    int unitId = 100;
+
+    cv.addMyUnit(unitId, 10, 10, 5000, WORKER);
   }
 };
 
