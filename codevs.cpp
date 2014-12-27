@@ -1339,6 +1339,8 @@ class Codevs{
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
 
         if(dist <= unitAttackRange[enemy->type]){
+          int k = countMyUnit(enemy->y, enemy->x, unitAttackRange[enemy->type]);
+          currentHp -= DAMAGE_TABLE[enemy->type][unit->type] / k;
         }
 
         it++;
@@ -2871,6 +2873,32 @@ class CodevsTest{
    * Case37: 城からの攻撃を受けたかどうかの判定
    */
   bool testCase37(){
+    cv.stageInitialize();
+
+    Unit *assasin = cv.createDummyUnit(0, 10, 10, 5000, ASSASIN);
+    if(cv.isCastelDamage(assasin)) return false;
+
+    assasin->hp = 4900;
+    cv.addEnemyUnit(1, 11, 11, 5000, WORKER);
+
+    if(cv.isCastelDamage(assasin)) return false;
+
+    assasin->hp = 4950;
+    cv.createDummyUnit(2, 10, 10, 5000, ASSASIN);
+
+    if(cv.isCastelDamage(assasin)) return false;
+
+    assasin->hp = 4990;
+    for(int i = 3; i < 11; i++){
+      cv.createDummyUnit(i, 10, 10, 5000, ASSASIN);
+    }
+    if(cv.isCastelDamage(assasin)) return false;
+
+    cv.createDummyUnit(11, 10, 10, 5000, ASSASIN);
+    if(cv.isCastelDamage(assasin)) return false;
+
+    cv.addEnemyUnit(12, 15, 15, 50000, CASTEL);
+    if(!cv.isCastelDamage(assasin)) return false;
 
     return true;
   }
