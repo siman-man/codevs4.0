@@ -204,6 +204,7 @@ struct Unit{
   int resourceX;          // 目的地(資源)のx座標
   int createWorkerCount;  // 生産したワーカーの数
   int createKnightCount;  // 生産したナイトの数
+  int castelAttackCount;  // 敵の城から攻撃を受けた回数
   int hp;                 // HP
   int beforeHp;           // 前のターンのHP
   int type;               // ユニットの種別
@@ -215,14 +216,16 @@ struct Unit{
 
 // ゲーム・フィールド全体の構造
 struct GameStage{
-  int searchedNodeCount;      // 調査済みのマスの数
-  int openedNodeCount;        // 調査予定マスの数
-  int visibleNodeCount;       // 現在確保できている視界の数   
-  int gameSituation;          // 試合状況
-  int targetY;                // 目的地
-  int targetX;                // 目的地
-  int baseCount;              // 拠点の数
-  Node field[HEIGHT][WIDTH];  // ゲームフィールド
+  int searchedNodeCount;            // 調査済みのマスの数
+  int openedNodeCount;              // 調査予定マスの数
+  int visibleNodeCount;             // 現在確保できている視界の数   
+  int gameSituation;                // 試合状況
+  int targetY;                      // 目的地
+  int targetX;                      // 目的地
+  int baseCount;                    // 拠点の数
+  bool castelAttack;                // 城からの攻撃を受けている
+  Node field[HEIGHT][WIDTH];        // ゲームフィールド
+  set<int> enemyCastelPointList;    // 敵の城の座標候補
 };
 
 // 座標を表す
@@ -321,8 +324,14 @@ class Codevs{
       // 資源マスの初期化
       resourceNodeList.clear();
 
+      // 敵の城の座標候補リストの初期化
+      gameStage.enemyCastelPointList.clear();
+
       // 拠点の数
       gameStage.baseCount = 0;
+
+      // 城からの攻撃をfalse
+      gameStage.castelAttack = false;
 
       // 最初に探索する部分を決める
       gameStage.targetY = 10;
@@ -458,6 +467,7 @@ class Codevs{
       unit.destX        = UNDEFINED;
       unit.createWorkerCount = 0;
       unit.createKnightCount = 0;
+      unit.castelAttackCount = 0;
       unit.leaderId     = UNDEFINED;
       unit.troopsCount  = 0;
       unit.attackRange  = unitAttackRange[unitType];
@@ -656,12 +666,13 @@ class Codevs{
     void updateUnknownPoint(){
       Coord bestCoord;
 
-      if(!gameStage.field[gameStage.targetY][gameStage.targetX].searched){
+      if(!gameStage.castelAttack && !gameStage.field[gameStage.targetY][gameStage.targetX].searched){
         return;
-      }else if(gameStage.targetX < 90 && gameStage.targetX + 10 > 99){
+      }else if(!gameStage.castelAttack && gameStage.targetX < 90 && gameStage.targetX + 10 > 99){
         gameStage.targetY += 10;
         gameStage.targetX += 10;
         return;
+      }else if(gameStage.castelAttack){
       }
 
       if(gameStage.gameSituation == ONRUSH){
@@ -836,9 +847,15 @@ class Codevs{
 
       gameStage.field[y][x].myUnitCount[unit->type] += 1;
 
-      //checkNode(unitId, y, x, unit->eyeRange);
-      if(unit->mode == SEARCH){
-        //checkStamp(y, x, unit->eyeRange * 2);
+      if(unit->beforeHp > unit->hp && isCastelDamage(unit)){
+        unit->castelAttackCount += 1;
+
+        if(!gameStage.castelAttack){
+          gameStage.castelAttack = true;
+          setCastelPointList(y,x);
+        }
+      }else{
+        unit->castelAttackCount = 0;
       }
     }
 
@@ -862,7 +879,9 @@ class Codevs{
      */
     void updateUnitMode(){
       set<int>::iterator it = myActiveUnitList.begin();
-      updateUnknownPoint();
+      if(gameStage.gameSituation != ONRUSH){
+        updateUnknownPoint();
+      }
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
@@ -956,10 +975,10 @@ class Codevs{
      * 試合状況の更新を行う
      */
     void updateGameSituation(){
-      if(gameStage.gameSituation != WARNING && enemyActiveUnitList.size() == 0){
-        gameStage.gameSituation = OPENING;
-      }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+      if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
         gameStage.gameSituation = ONRUSH;
+      }else if(gameStage.gameSituation != WARNING && enemyActiveUnitList.size() == 0){
+        gameStage.gameSituation = OPENING;
       }else{
         gameStage.gameSituation = WARNING;
       }
@@ -1075,7 +1094,6 @@ class Codevs{
               if(operation == NO_MOVE){
                 return MIN_VALUE;
               }else{
-                fprintf(stderr,"node cost = %d\n",node->cost);
                 assert(node->cost == 0 || node->cost == 1000);
                 //return 100 * myResourceCount + calcUnknownPoint(unit->y, unit->x);
                 return 100 * myResourceCount + 2 * gameStage.openedNodeCount - destDist - 5 * stamp - node->cost;
@@ -1347,6 +1365,74 @@ class Codevs{
       }
 
       return (currentHp != unit->hp);
+    }
+
+    /*
+     * 敵の城の候補地を選出する(初めてダメージを受けたマスから範囲10のマスのどこか)
+     * 1回の試合で1回しか呼ばれない
+     */
+    void setCastelPointList(int ypos, int xpos){
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          int dist = calcManhattanDist(ypos, xpos, y, x);
+
+          if(dist == 10 && isCastelPoint(y,x)){
+            gameStage.enemyCastelPointList.insert(y*WIDTH+x);
+          }
+        }
+      }
+    }
+
+    /*
+     * 敵の城の候補地を更新
+     */
+    void updateCastelPointList(int ypos, int xpos){
+      set<int> tempPointList = gameStage.enemyCastelPointList;
+      set<int>::iterator it = tempPointList.begin();
+
+      while(it != tempPointList.end()){
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+        int dist = calcManhattanDist(ypos, xpos, y, x);
+
+        if(dist > 10){
+          gameStage.enemyCastelPointList.erase(*it);
+        }
+
+        it++;
+      }
+    }
+
+    /*
+     * そこが敵の城かどうかを判定する
+     */
+    bool isCastelPoint(int y, int x){
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(y, x), 0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop();
+
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > 5) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = &gameStage.field[coord.y][coord.x];
+
+        if(node->searched) return false;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx), dist+1));
+        }
+      }
+
+      return true;
     }
 
     /*
@@ -2041,6 +2127,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase36:\t%s\n", testCase36()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase37:\t%s\n", testCase37()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase38:\t%s\n", testCase38()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase39:\t%s\n", testCase39()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2086,9 +2173,11 @@ class CodevsTest{
     if(myActiveUnitList.size() != 0) return false;
     if(enemyActiveUnitList.size() != 0) return false;
     if(resourceNodeList.size() != 0) return false;
+    if(gameStage.enemyCastelPointList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.visibleNodeCount != 0) return false;
     if(gameStage.openedNodeCount != 0) return false;
+    if(gameStage.castelAttack) return false;
     if(gameStage.field[0][0].cost != 1000) return false;
 
     for(int y = 0; y < HEIGHT; y++){
@@ -2922,6 +3011,19 @@ class CodevsTest{
 
     myUnitCount = cv.countMyUnit(10, 10, 2);
     if(myUnitCount != 10) return false;
+
+    return true;
+  }
+
+  /*
+   * Case39: 敵の城の候補地を出す
+   */
+  bool testCase39(){
+    cv.stageInitialize();
+
+    cv.setCastelPointList(20, 20);
+
+    if(gameStage.enemyCastelPointList.size() != 40) return false;
 
     return true;
   }
