@@ -178,14 +178,14 @@ struct Node{
   bool searched;            // 既に調査済みかどうか
   bool rockon;              // ノードを狙っている自軍がいるかどうか
   int stamp;                // 足跡
-  int cost;                 // ノードのコスト
-  int markCount;            // マークカウント(自軍が行動する予定のマス)
-  int seenCount;            // ノードを監視しているユニットの数 
-  int troopsId;             // 滞在中の軍隊ID
-  int myUnitCount[7];       // 自軍の各ユニット数
-  int enemyUnitCount[7];    // 相手の各ユニット数
-  set<int> seenMembers;     // ノードを監視している自軍のメンバー
-  set<int> myUnits;         // 自軍のIDリスト
+  int cost;               // ノードのコスト
+  int markCount;          // マークカウント(自軍が行動する予定のマス)
+  int seenCount;          // ノードを監視しているユニットの数 
+  int troopsId;           // 滞在中の軍隊ID
+  int myUnitCount[7];     // 自軍の各ユニット数
+  int enemyUnitCount[7];  // 相手の各ユニット数
+  set<int> seenMembers;   // ノードを監視している自軍のメンバー
+  set<int> myUnits;       // 自軍のIDリスト
 };
 
 // ユニットが持つ属性
@@ -472,7 +472,6 @@ class Codevs{
       }
 
       gameStage.field[y][x].myUnitCount[unitType] += 1;
-      gameStage.field[y][x].myUnits.insert(unitId);
 
       unitList[unitId] = unit;
       unitList[unitId].mode = directFirstMode(&unitList[unitId]);
@@ -1357,25 +1356,6 @@ class Codevs{
       que.push(cell(Coord(y, x), 0));
 
       while(!que.empty()){
-        cell c = que.front(); que.pop();
-
-        Coord coord = c.first;
-        int dist = c.second;
-
-        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
-        checkList[coord.y*WIDTH+coord.x] = true;
-
-        Node *node = &gameStage.field[coord.y][coord.x];
-
-        int cnt = node->myUnits.size();
-        unitCount += min(10, cnt);
-
-        for(int i = 1; i < 5; i++){
-          int ny = coord.y + dy[i];
-          int nx = coord.x + dx[i];
-
-          if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx),dist+1));
-        }
       }
 
       return unitCount;
@@ -1482,7 +1462,6 @@ class Codevs{
             node->markCount = 0;
           }
           node->seenMembers.clear();
-          node->myUnits.clear();
           node->opened = false;
           if(turn % 4 == 0){
             node->stamp = 0;
@@ -2038,7 +2017,6 @@ class CodevsTest{
     fprintf(stderr, "TestCase35:\t%s\n", testCase35()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase36:\t%s\n", testCase36()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase37:\t%s\n", testCase37()? "SUCCESS!" : "FAILED!");
-    fprintf(stderr, "TestCase38:\t%s\n", testCase38()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2803,6 +2781,7 @@ class CodevsTest{
     if(assasin->mode != STAY) return false;
     if(assasin2->mode != STAY) return false;
     if(cv.calcManhattanDist(assasin2->y, assasin2->x, assasin->y, assasin->x) != 0) return false;
+    fprintf(stderr,"value = %d\n", cv.calcCombatEvaluation(assasin2, MOVE_UP));
 
     assasin->mode = STAY;
     assasin2->mode = STAY;
@@ -2823,10 +2802,21 @@ class CodevsTest{
     if(cv.calcManhattanDist(assasin2->y, assasin2->x, assasin->y, assasin->x) != 0) return false;
     if(cv.calcManhattanDist(assasin3->y, assasin3->x, assasin->y, assasin->x) != 1) return false;
 
+    fprintf(stderr,"assasin2 value = %d\n", cv.calcCombatEvaluation(assasin2, MOVE_UP));
+    fprintf(stderr,"assasin3 value = %d\n", cv.calcCombatEvaluation(assasin3, MOVE_UP));
+    fprintf(stderr,"assasin4 value = %d\n", cv.calcCombatEvaluation(assasin4, MOVE_UP));
+
     assasin->troopsCount = 11;
     gameStage.field[10][10].myUnitCount[ASSASIN] = 11;
 
+    fprintf(stderr,"assasin2 value = %d\n", cv.calcCombatEvaluation(assasin2, MOVE_UP));
+    fprintf(stderr,"assasin3 value = %d\n", cv.calcCombatEvaluation(assasin3, MOVE_UP));
+    fprintf(stderr,"assasin4 value = %d\n", cv.calcCombatEvaluation(assasin4, MOVE_UP));
+
     gameStage.field[11][10].myUnitCount[ASSASIN] = 5;
+    fprintf(stderr,"assasin2 value = %d\n", cv.calcCombatEvaluation(assasin2, MOVE_UP));
+    fprintf(stderr,"assasin3 value = %d\n", cv.calcCombatEvaluation(assasin3, MOVE_UP));
+    fprintf(stderr,"assasin4 value = %d\n", cv.calcCombatEvaluation(assasin4, MOVE_UP));
 
     return true;
   }
@@ -2868,32 +2858,9 @@ class CodevsTest{
   }
 
   /*
-   * Case37: 城からの攻撃を受けたかどうかの判定
+   * 城からの攻撃を受けたかどうかの判定
    */
   bool testCase37(){
-
-    return true;
-  }
-
-  /*
-   * Case38: 自軍の数を数えることができる
-   */
-  bool testCase38(){
-    cv.stageInitialize();
-
-    cv.createDummyUnit(0, 10, 10, 5000, ASSASIN);
-    cv.createDummyUnit(1, 10, 10, 5000, ASSASIN);
-
-    int myUnitCount = cv.countMyUnit(10, 10, 2);
-
-    if(myUnitCount != 2) return false;
-
-    for(int i = 2; i < 11; i++){
-      cv.createDummyUnit(i, 10, 10, 5000, ASSASIN);
-    }
-
-    myUnitCount = cv.countMyUnit(10, 10, 2);
-    if(myUnitCount != 10) return false;
 
     return true;
   }
