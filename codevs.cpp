@@ -326,6 +326,9 @@ class Codevs{
       // 敵ユニットリストの初期化
       enemyActiveUnitList.clear();
 
+      // 突撃回数の初期化
+      attackCount = 0;
+
       // 資源マスの初期化
       resourceNodeList.clear();
 
@@ -740,7 +743,6 @@ class Codevs{
           }
         }
 
-        assert(false);
         gameStage.targetY = enemyCastelCoordY;
         gameStage.targetX = enemyCastelCoordX;
       }
@@ -996,12 +998,29 @@ class Codevs{
           }
           break;
         case FIGHER:
-          if(unit->mode == STAY && node->myUnitCount[FIGHER] < ATTACK_NUM){
-            return STAY;
-          }else if(node->myUnitCount[FIGHER] >= ATTACK_NUM){
-            return DESTROY;
-          }else{
-            return STAY;
+          switch(unit->role){
+            case LEADER:
+              if(unit->troopsCount >= unit->troopsLimit){
+                if(unit->townId != NULL){
+                  unit->townId = NULL;
+                  node->troopsId = UNDEFINED;
+                }
+
+                return DESTROY;
+              }else if(unit->mode == STAY && unit->troopsCount < unit->troopsLimit){
+                return STAY;
+              }else{
+                return DESTROY;
+              }
+              break;
+            default:
+              Unit *leader = &unitList[unit->leaderId];
+              if(leader->mode == DESTROY){
+                return DESTROY;
+              }else{
+                return STAY;
+              }
+              break;
           }
           break;
         case ASSASIN:
@@ -1051,13 +1070,29 @@ class Codevs{
     }
 
     /*
+     * 周りにリーダが居ないか調べる
+     */
+    bool existLeader(int y, int x){
+      for(int i = 0; i < 5; i++){
+        int ny = y + dy[i];
+        int nx = x + dx[i];
+
+        if(!isWall(ny,nx) && gameStage.field[ny][nx].troopsId != UNDEFINED){
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /*
      * 役割を決める
      */
     int directUnitRole(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
 
       if(unit->type == ASSASIN || unit->type == FIGHER || unit->type == KNIGHT){
-        if(node->troopsId == UNDEFINED){
+        if(!existLeader(unit->y, unit->x)){
           node->troopsId = unit->id;
           unit->townId = node;
           unit->troopsCount = 1;
@@ -1226,6 +1261,8 @@ class Codevs{
             case SEARCH:
               if(operation == NO_MOVE){
                 return MIN_VALUE;
+              }else if(operation == CREATE_BASE && calcManhattanDist(unit->y, unit->x, 99, 99) <= 60){
+                return 100000;
               }else{
                 if(isDie(unit, unit->y, unit->x)){
                   return -10000;
@@ -1292,10 +1329,10 @@ class Codevs{
 
       if(node->resource && unit->resourceY == unit->y && unit->resourceX == unit->x){
         //fprintf(stderr,"Base Count = %d\n", node->myUnitCount[BASE]);
-        if(gameStage.gameSituation == WARNING && dist <= 80 && operation == CREATE_BASE && myResourceCount >= 600 && node->myUnitCount[BASE] == 1){
-          return 10000;
+        if(gameStage.gameSituation == WARNING && operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
+          return -10000;
         }else if(operation == CREATE_BASE && dist <= 80 && myResourceCount >= 600 && node->myUnitCount[BASE] == 1){
-          return 1000;
+          return -1000;
         }else if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
           return 100;
         }else{
@@ -1335,7 +1372,7 @@ class Codevs{
      * 城が動いていない時の評価値
      */
     int calcNoneCastelEvaluation(Unit *unit, int operation){
-      if(operation == CREATE_WORKER && turn <= 8){
+      if(operation == CREATE_WORKER && turn <= 12){
         return 100;
       }else{
         return 0;
@@ -1402,29 +1439,27 @@ class Codevs{
 
       switch(unit->mode){
         case STAY:
-          if(gameStage.field[leader->y][leader->x].myUnitCount[ASSASIN] <= 10){
+          if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= 10){
             return -100 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x);
           }else{
-            return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[ASSASIN];
+            return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
           }
           break;
         case DESTROY:
           if(leader->mode == DESTROY){
             if(gameStage.gameSituation == ONRUSH){
-              if(gameStage.field[unit->y][unit->x].myUnitCount[ASSASIN] <= 10 && unit->y == leader->y && unit->x == leader->x){
+              if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 10 && unit->y == leader->y && unit->x == leader->x){
                 return 100;
-              }else if(gameStage.field[unit->y][unit->x].myUnitCount[ASSASIN] <= 10){
-                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[ASSASIN];
-                return -1 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 100;
+              }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 10){
+                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
               }else{
-                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[ASSASIN];
-                return -1 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 200;
+                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
               }
             }else{
-              if(gameStage.field[leader->y][leader->x].myUnitCount[ASSASIN] <= 10 && unit->y == leader->y && unit->x == leader->x){
+              if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= 10 && unit->y == leader->y && unit->x == leader->x){
                 return 100;
               }else{
-                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[ASSASIN];
+                return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
                 return -1 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 100;
               }
             }
