@@ -537,6 +537,13 @@ class Codevs{
     } 
 
     /*
+     * 敵軍のユニットを削除する
+     */
+    void removeEnemyUnit(Unit *unit){
+      enemyActiveUnitList.erase(unit->id);
+    }
+
+    /*
      * 敵軍ユニットの追加を行う
      *   unitId: ユニットID
      *        y: y座標
@@ -882,6 +889,10 @@ class Codevs{
       unit->hp        = hp;
       unit->timestamp = turn;
 
+      if(turn == 114){
+        fprintf(stderr,"turn = %d, id = %d, beforeHp = %d, hp = %d\n", turn, unit->id, unit->beforeHp, hp);
+      }
+
       gameStage.field[y][x].myUnitCount[unit->type] += 1;
       gameStage.field[y][x].myUnits.insert(unitId);
     }
@@ -1094,7 +1105,7 @@ class Codevs{
      * ユニットのtimestampが更新されていない場合は前のターンで的に倒されたので、
      * リストから排除する。
      */
-    void unitSurvivalCheck(){
+    void myUnitSurvivalCheck(){
       set<int> tempList = myActiveUnitList;
       set<int>::iterator it = tempList.begin();
 
@@ -1114,6 +1125,21 @@ class Codevs{
     /*
      * 敵軍の生存確認
      */
+    void enemyUnitSurvivalCheck(){
+      set<int> tempList = enemyActiveUnitList;
+      set<int>::iterator it = tempList.begin();
+
+      while(it != tempList.end()){
+        Unit *enemy = &unitList[*it];
+        Node *node = &gameStage.field[enemy->y][enemy->x];
+
+        if(enemy->timestamp != turn && node->timestamp == turn){
+          removeEnemyUnit(enemy);
+        }
+
+        it++;
+      }
+    }
 
     /*
      * 敵の攻撃をうけたかどうか
@@ -1125,7 +1151,7 @@ class Codevs{
         Unit *unit = &unitList[*it];
 
         if(unit->beforeHp > unit->hp && isCastelDamage(unit)){
-          fprintf(stderr,"beforeHp = %d, hp = %d\n", unit->beforeHp, unit->hp);
+          fprintf(stderr,"turn = %d, id = %d, y = %d, x = %d, beforeHp = %d, hp = %d\n", turn, unit->id, unit->y, unit->x, unit->beforeHp, unit->hp);
           unit->castelAttackCount += 1;
 
           if(!gameStage.castelAttack){
@@ -1156,7 +1182,7 @@ class Codevs{
                 return MIN_VALUE;
               }else{
                 //return 100 * myResourceCount + calcUnknownPoint(unit->y, unit->x);
-                return 100 * myResourceCount + 2 * gameStage.openedNodeCount - destDist - 5 * stamp - node->cost;
+                return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 5 * stamp - node->cost;
               }
               break;
             case PICKING:
@@ -1242,8 +1268,8 @@ class Codevs{
         return 100;
       }else if(operation != CREATE_WORKER && gameStage.gameSituation == WARNING && unit->createWorkerCount >= 5){
         return 1000;
-      }else if(operation == CREATE_WORKER && myResourceCount >= 100 && centerDist <= 50 && unit->createWorkerCount <= 8){
-        return 100;
+      }else if(operation == CREATE_WORKER && myResourceCount >= 100 && centerDist <= 70 && unit->createWorkerCount <= 8){
+        return 110;
       }else{
         return 0;
       }
@@ -1396,18 +1422,10 @@ class Codevs{
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
           Node *node = &gameStage.field[y][x];
+          int dist = calcNearWallDistance(y,x);
 
-          if(y == 0 || y == HEIGHT-1 || x == 0 || x == WIDTH-1){
-            node->cost = 2000;
-          }
-          if(y == 1 || y == HEIGHT-2 || x == 1 || x == WIDTH-2){
-            node->cost = 1500;
-          }
-          if(y == 2 || y == HEIGHT-3 || x == 2 || x == WIDTH-3){
-            node->cost = 1000;
-          }
-          if(y == 3 || y == HEIGHT-4 || x == 3 || x == WIDTH-4){
-            node->cost = 500;
+          if(dist <= 3){
+            node->cost = (4-dist) * 2;
           }
         }
       }
@@ -1431,23 +1449,33 @@ class Codevs{
     bool isCastelDamage(Unit *unit){
       int currentHp = unit->beforeHp;
 
-      if(calcManhattanDist(unit->y, unit->x, 99, 99) > 40) return false;
-
       set<int>::iterator it = enemyActiveUnitList.begin();
+
+      if(turn == 114){
+        fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
+      }
 
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = &unitList[*it];
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
+        //fprintf(stderr,"id = %d, attackRange = %d\n", enemy->id, enemy->attackRange);
 
         if(dist <= unitAttackRange[enemy->type]){
           int k = countMyUnit(enemy->y, enemy->x, unitAttackRange[enemy->type]);
           //fprintf(stderr,"attack: k = %d\n", k);
           if(k > 0){
+            if(turn == 114){
+              fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
+            }
             currentHp -= DAMAGE_TABLE[enemy->type][unit->type] / k;
           }
         }
 
         it++;
+      }
+
+      if(turn == 114){
+        fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
       }
 
       return (currentHp != unit->hp);
@@ -1465,7 +1493,7 @@ class Codevs{
           int dist = calcManhattanDist(ypos, xpos, y, x);
 
           if(dist == 10 && isCastelPoint(y,x)){
-            //fprintf(stderr,"list y = %d, x = %d\n",y, x);
+            fprintf(stderr,"list y = %d, x = %d\n",y, x);
             gameStage.enemyCastelPointList.insert(y*WIDTH+x);
           }
         }
@@ -1688,7 +1716,10 @@ class Codevs{
         eachTurnProc();
 
         // 自軍の生存確認
-        unitSurvivalCheck();
+        myUnitSurvivalCheck();
+
+        // 敵軍の生存確認
+        enemyUnitSurvivalCheck();
 
         // 敵の城から攻撃を受けたかどうかのチェック
         enemyCastelAttackCheck();
@@ -2221,6 +2252,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase38:\t%s\n", testCase38()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase39:\t%s\n", testCase39()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase40:\t%s\n", testCase40()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase40:\t%s\n", testCase41()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2271,7 +2303,6 @@ class CodevsTest{
     if(gameStage.visibleNodeCount != 0) return false;
     if(gameStage.openedNodeCount != 0) return false;
     if(gameStage.castelAttack) return false;
-    if(gameStage.field[0][0].cost != 2000) return false;
 
     for(int y = 0; y < HEIGHT; y++){
       for(int x = 0; x < WIDTH; x++){
@@ -2549,7 +2580,7 @@ class CodevsTest{
     if(gameStage.visibleNodeCount != 82) return false;
     if(gameStage.openedNodeCount != 0) return false;
 
-    cv.unitSurvivalCheck();
+    cv.myUnitSurvivalCheck();
 
     if(myActiveUnitList.size() != 1) return false;
     if(myActiveUnitList.find(100) == myActiveUnitList.end()) return false;
@@ -3086,6 +3117,37 @@ class CodevsTest{
     cv.addEnemyUnit(12, 90, 90, 50000, CASTEL);
     if(!cv.isCastelDamage(assasin)) return false;
 
+    // reset
+    cv.stageInitialize();
+    fprintf(stderr,"hello\n");
+    Unit *worker = cv.createDummyUnit(0, 63, 90, 1900, WORKER);
+    cv.addEnemyUnit(1, 67, 96, 50000, CASTEL);
+    if(!cv.isCastelDamage(worker)) return false;
+
+    // reset
+    cv.stageInitialize();
+    Unit *worker1 = cv.createDummyUnit(0, 94, 17, 1550, WORKER);
+    worker1->beforeHp = 1566;
+
+    Unit *village = cv.createDummyUnit(1, 94, 17, 19650, VILLAGE);
+    village->beforeHp = 19666;
+
+    Unit *worker2 = cv.createDummyUnit(2, 94, 17, 1700, WORKER);
+    worker2->beforeHp = 1716;
+
+    Unit *worker3 = cv.createDummyUnit(3, 94, 17, 1766, WORKER);
+    worker3->beforeHp = 1782;
+
+    Unit *worker4 = cv.createDummyUnit(4, 94, 17, 1816, WORKER);
+    worker4->beforeHp = 1832;
+
+    Unit *worker5 = cv.createDummyUnit(5, 94, 17, 1856, WORKER);
+    worker5->beforeHp = 1872;
+
+    cv.addEnemyUnit(6, 94, 17, 20000, VILLAGE);
+    if(enemyActiveUnitList.size() != 1) return false;
+    if(cv.isCastelDamage(worker1)) return false;
+
     return true;
   }
 
@@ -3108,6 +3170,10 @@ class CodevsTest{
 
     myUnitCount = cv.countMyUnit(10, 10, 2);
     if(myUnitCount != 10) return false;
+
+    cv.createDummyUnit(20, 63, 90, 2000, WORKER);
+    myUnitCount = cv.countMyUnit(67, 96, 10);
+    if(myUnitCount != 1) return false;
 
     return true;
   }
@@ -3135,6 +3201,25 @@ class CodevsTest{
     if(cv.calcNearWallDistance(3,2) != 2) return false;
     if(cv.calcNearWallDistance(10,20) != 10) return false;
     if(cv.calcNearWallDistance(99,98) != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * 敵の生存確認ができる
+   */
+  bool testCase41(){
+    cv.stageInitialize();
+    cv.addEnemyUnit(0, 10, 10, 2000, WORKER);
+    Unit *enemy = &unitList[0];
+    Node *node = &gameStage.field[10][10];
+
+    enemy->timestamp = -1;
+    node->timestamp = turn;
+
+    cv.enemyUnitSurvivalCheck();
+
+    if(enemyActiveUnitList.size() != 0) return false;
 
     return true;
   }
