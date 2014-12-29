@@ -256,6 +256,7 @@ int remainingTime;            // 残り時間
 int stageNumber;              // 現在のステージ数
 int currentStageNumber;       // 現在のステージ数
 int turn;                     // 現在のターン
+int totalTurn;                // ターンの合計値
 int myAllUnitCount;           // 自軍のユニット数
 int enemyAllUnitCount;        // 敵軍のユニット数
 int resourceCount;            // 資源の数
@@ -286,6 +287,7 @@ class Codevs{
      */
     void init(){
       currentStageNumber = -1;
+      totalTurn = 0;
 
       manhattanDistInitialize();
 
@@ -317,6 +319,8 @@ class Codevs{
      * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
+      totalTurn += turn;
+      fprintf(stderr,"total turn: %d\n", totalTurn);
       fprintf(stderr,"stageInitialize =>\n");
       // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
@@ -709,14 +713,14 @@ class Codevs{
       }else if(!gameStage.castelAttack && gameStage.targetX < 90 && gameStage.targetY < 90 && gameStage.targetY + 10 < 99 && gameStage.targetX + 10 < 99){
         gameStage.targetY += 10;
         gameStage.targetX += 10;
-        fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
+        //fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
         return;
       }else if(gameStage.castelAttack && gameStage.enemyCastelPointList.size() > 0){
         Node *node = &gameStage.field[gameStage.targetY][gameStage.targetX];
 
         if(node->searched || !node->enemyCastel){
           gameStage.enemyCastelPointList.pop();
-          fprintf(stderr,"turn = %d, Next Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
+          //fprintf(stderr,"turn = %d, Next Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
         }else{
           return;
         }
@@ -728,7 +732,7 @@ class Codevs{
         gameStage.targetY = y;
         gameStage.targetX = x;
 
-        fprintf(stderr,"Next Target Point: y = %d, x = %d\n", y, x);
+        //fprintf(stderr,"Next Target Point: y = %d, x = %d\n", y, x);
         return;
       }else{
         if(gameStage.gameSituation == ONRUSH){
@@ -749,7 +753,7 @@ class Codevs{
           Node *node = &gameStage.field[coord.y][coord.x];
 
           if(!node->searched && node->enemyCastel && calcManhattanDist(coord.y, coord.x, 99, 99) <= 40){
-            fprintf(stderr,"Next point: y = %d, x = %d\n", coord.y, coord.x);
+            //fprintf(stderr,"Next point: y = %d, x = %d\n", coord.y, coord.x);
             gameStage.targetY = coord.y;
             gameStage.targetX = coord.x;
             return;
@@ -1120,10 +1124,10 @@ class Codevs{
           if(attackCount == 0){
             unit->troopsLimit = 30;
           }else{
-            unit->troopsLimit = 50;
+            unit->troopsLimit = 1;
           }
           attackCount += 1;
-          fprintf(stderr,"attack count = %d\n", attackCount);
+          //fprintf(stderr,"attack count = %d\n", attackCount);
 
           return LEADER;
         }else{
@@ -1250,7 +1254,7 @@ class Codevs{
             setCastelPointList(unit->y,unit->x);
 
             if(gameStage.enemyCastelPointList.size() == 0){
-              fprintf(stderr,"No castel point\n");
+              //fprintf(stderr,"No castel point\n");
               queue<int> que;
               gameStage.enemyCastelPointList = que;
               gameStage.castelAttack = false;
@@ -1292,7 +1296,7 @@ class Codevs{
             case SEARCH:
               if(operation == NO_MOVE){
                 return MIN_VALUE;
-              }else if(operation == CREATE_BASE && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 55 || gameStage.gameSituation == ONRUSH)){
+              }else if(operation == CREATE_BASE && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || gameStage.castelAttack)){
                 return 100000;
               }else{
                 if(isDie(unit, unit->y, unit->x)){
@@ -1638,14 +1642,14 @@ class Codevs{
       if(unit->timestamp != turn) return false;
 
       if(turn == 184){
-        fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
+        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
       }
 
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = &unitList[*it];
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
         if(turn == 184){
-          fprintf(stderr,"id = %d, y = %d, x = %d, attackRange = %d\n", enemy->id, enemy->y, enemy->x, enemy->attackRange);
+          //fprintf(stderr,"id = %d, y = %d, x = %d, attackRange = %d\n", enemy->id, enemy->y, enemy->x, enemy->attackRange);
         }
 
         if(dist <= unitAttackRange[enemy->type]){
@@ -1654,7 +1658,7 @@ class Codevs{
           //fprintf(stderr,"attack: k = %d\n", k);
           if(k > 0){
             if(turn == 184){
-              fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
+              //fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
             }
             currentHp -= DAMAGE_TABLE[enemy->type][unit->type] / k;
           }
@@ -1664,7 +1668,7 @@ class Codevs{
       }
 
       if(turn == 184){
-        fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
+        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
       }
 
       return (currentHp != unit->hp);
@@ -1699,8 +1703,8 @@ class Codevs{
      * 1回の試合で1回しか呼ばれない
      */
     void setCastelPointList(int ypos, int xpos){
-      fprintf(stderr,"setCastelPointList: turn = %d, ypos = %d, xpos = %d\n", turn, ypos, xpos);
-      fprintf(stderr,"check = %d\n", gameStage.field[90][72].enemyCastel);
+      //fprintf(stderr,"setCastelPointList: turn = %d, ypos = %d, xpos = %d\n", turn, ypos, xpos);
+      //fprintf(stderr,"check = %d\n", gameStage.field[90][72].enemyCastel);
 
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
@@ -1708,7 +1712,7 @@ class Codevs{
           Node *node = &gameStage.field[y][x];
 
           if(dist == 10 && node->enemyCastel && isCastelPoint(y,x)){
-            fprintf(stderr,"list y = %d, x = %d\n",y, x);
+            //fprintf(stderr,"list y = %d, x = %d\n",y, x);
             gameStage.enemyCastelPointList.push(y*WIDTH+x);
           }
         }
