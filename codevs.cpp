@@ -712,7 +712,9 @@ class Codevs{
         fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
         return;
       }else if(gameStage.castelAttack && gameStage.enemyCastelPointList.size() > 0){
-        if(gameStage.field[gameStage.targetY][gameStage.targetX].searched){
+        Node *node = &gameStage.field[gameStage.targetY][gameStage.targetX];
+
+        if(node->searched || !node->enemyCastel){
           gameStage.enemyCastelPointList.pop();
           fprintf(stderr,"turn = %d, Next Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
         }else{
@@ -1115,7 +1117,11 @@ class Codevs{
           unit->townId = node;
           unit->troopsCount = 1;
 
-          unit->troopsLimit = (attackCount == 0)? 20 : 50;
+          if(attackCount == 0){
+            unit->troopsLimit = 30;
+          }else{
+            unit->troopsLimit = 50;
+          }
           attackCount += 1;
           fprintf(stderr,"attack count = %d\n", attackCount);
 
@@ -1148,7 +1154,7 @@ class Codevs{
         Node *node = &gameStage.field[y][x];
 
         if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x)){
-          fprintf(stderr,"turn %d, - unit %d target: y = %d, x = %d, unit->y = %d, unit->x = %d\n", turn, unit->id, y, x, unit->y, unit->x);
+          //fprintf(stderr,"turn %d, - unit %d target: y = %d, x = %d, unit->y = %d, unit->x = %d\n", turn, unit->id, y, x, unit->y, unit->x);
           node->rockon = true;
           unit->resourceY = y;
           unit->resourceX = x;
@@ -1286,13 +1292,15 @@ class Codevs{
             case SEARCH:
               if(operation == NO_MOVE){
                 return MIN_VALUE;
-              }else if(operation == CREATE_BASE && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 60 || gameStage.gameSituation == ONRUSH)){
+              }else if(operation == CREATE_BASE && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 55 || gameStage.gameSituation == ONRUSH)){
                 return 100000;
               }else{
                 if(isDie(unit, unit->y, unit->x)){
                   return -10000;
+                }else if(turn <= 10){
+                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
                 }else{
-                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - stamp - node->cost;
+                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost;
                 }
               }
               break;
@@ -1356,7 +1364,7 @@ class Codevs{
         //fprintf(stderr,"Base Count = %d\n", node->myUnitCount[BASE]);
         if(gameStage.gameSituation == WARNING && operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
           return -10000;
-        }else if(operation == CREATE_BASE && dist <= 80 && myResourceCount >= 600 && node->myUnitCount[BASE] == 1){
+        }else if(operation == CREATE_BASE && dist <= 80 && myResourceCount >= 1000 && node->myUnitCount[BASE] == 1){
           return -1000;
         }else if(operation == CREATE_VILLAGE && node->myUnitCount[VILLAGE] == 1){
           return 100;
@@ -1380,13 +1388,14 @@ class Codevs{
      */
     int calcNoneVillageEvaluation(Unit *village, int operation){
       int centerDist = calcManhattanDist(village->y, village->x, 50, 50);
+      int income = gameStage.incomeResource;
       Node *node = &gameStage.field[village->y][village->x];
 
-      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5 && village->createWorkerCount <= 6){
+      if(operation == CREATE_WORKER && node->myUnitCount[WORKER] <= 5 && village->createWorkerCount <= 7){
         return 100;
       }else if(operation != CREATE_WORKER && gameStage.gameSituation == WARNING && village->createWorkerCount >= 5){
         return 1000;
-      }else if(operation == CREATE_WORKER && myResourceCount >= 40 && centerDist <= 70 && village->createWorkerCount <= 6){
+      }else if(operation == CREATE_WORKER && myResourceCount >= 40 && centerDist <= 60 && village->createWorkerCount <= 7){
         return 110;
       }else if(operation != CREATE_WORKER){
         return 10;
@@ -1411,9 +1420,7 @@ class Codevs{
      * 拠点が動いていない時の評価値
      */
     int calcNoneBaseEvaluation(Unit *base, int operation){
-      if(gameStage.baseCount == 1 && operation == CREATE_KNIGHT && base->createKnightCount <= 10){
-        return 200;
-      }else if(operation == CREATE_ASSASIN){
+      if(operation == CREATE_ASSASIN){
         return 100;
       }else{
         return 0;
@@ -1510,8 +1517,7 @@ class Codevs{
      * 自軍ユニットとの距離
      */
     int aroundMyUnitDist(Unit *unit){
-      int dist;
-      int sumDist = 0;
+      int minDist = 9999;
       priority_queue< Coord, vector<Coord>, greater<Coord>  > que;
 
       set<int>::iterator it = myActiveUnitList.begin();
@@ -1519,20 +1525,19 @@ class Codevs{
       while(it != myActiveUnitList.end()){
         Unit *other = &unitList[*it];
 
+        if(unit->id == other->id){
+          it++;
+          continue;
+        }
+
         if(other->movable){
-          Coord coord(other->y, other->x);
-          dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
-          coord.dist = dist;
+          minDist = min(minDist, calcManhattanDist(unit->y, unit->x, other->y, other->x));
         }
 
         it++;
       }
 
-      for(int i = 0; i < 2 && !que.empty(); i++){
-        sumDist += que.top().dist; que.pop();
-      }
-
-      return sumDist;
+      return minDist;
     }
 
     /*
@@ -1546,8 +1551,37 @@ class Codevs{
           int dist = calcNearWallDistance(y,x);
 
           if(dist <= 3){
-            node->cost = (4-dist) * 2;
+            node->cost = (4-dist) * 4;
           }
+        }
+      }
+
+      map<int, bool> checkList;
+      queue<cell> que;
+      /*
+      que.push(cell(Coord(0, 0), 10));
+      que.push(cell(Coord(0, 99), 20));
+      que.push(cell(Coord(99, 0), 20));
+      que.push(cell(Coord(99, 99), 10));
+      */
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop();
+
+        Coord coord = c.first;
+        int cost = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || cost <= 0) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = &gameStage.field[coord.y][coord.x];
+        node->cost += cost;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx), cost-1));
         }
       }
     }
@@ -1604,14 +1638,14 @@ class Codevs{
       if(unit->timestamp != turn) return false;
 
       if(turn == 184){
-        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
+        fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
       }
 
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = &unitList[*it];
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
         if(turn == 184){
-          //fprintf(stderr,"id = %d, y = %d, x = %d, attackRange = %d\n", enemy->id, enemy->y, enemy->x, enemy->attackRange);
+          fprintf(stderr,"id = %d, y = %d, x = %d, attackRange = %d\n", enemy->id, enemy->y, enemy->x, enemy->attackRange);
         }
 
         if(dist <= unitAttackRange[enemy->type]){
@@ -1620,7 +1654,7 @@ class Codevs{
           //fprintf(stderr,"attack: k = %d\n", k);
           if(k > 0){
             if(turn == 184){
-              //fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
+              fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
             }
             currentHp -= DAMAGE_TABLE[enemy->type][unit->type] / k;
           }
@@ -1630,7 +1664,7 @@ class Codevs{
       }
 
       if(turn == 184){
-        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
+        fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
       }
 
       return (currentHp != unit->hp);
@@ -1666,6 +1700,7 @@ class Codevs{
      */
     void setCastelPointList(int ypos, int xpos){
       fprintf(stderr,"setCastelPointList: turn = %d, ypos = %d, xpos = %d\n", turn, ypos, xpos);
+      fprintf(stderr,"check = %d\n", gameStage.field[90][72].enemyCastel);
 
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
@@ -1694,7 +1729,7 @@ class Codevs{
         Coord coord = c.first;
         int dist = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || dist > 5) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || dist > 4) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = &gameStage.field[coord.y][coord.x];
@@ -2126,6 +2161,10 @@ class Codevs{
         case CREATE_BASE:
           if(canBuild(unit->type, BASE)){
             createUnit(unit->y, unit->x, BASE);
+
+            if(final){
+              gameStage.baseCount += 1;
+            }
           }else{
             return false;
           }
@@ -2430,6 +2469,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase40:\t%s\n", testCase40()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase41:\t%s\n", testCase41()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase42:\t%s\n", testCase42()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase43:\t%s\n", testCase43()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3419,6 +3459,20 @@ class CodevsTest{
     gameStage.field[10][10].myUnitCount[WORKER] = 6;
     cv.updateIncomeResource();
     if(gameStage.incomeResource != 15) return 0;
+
+    return true;
+  }
+
+  /*
+   * Case43: 敵の城である可能性があるかどうかを確かめる
+   */
+  bool testCase43(){
+    cv.stageInitialize();
+
+    cv.addEnemyUnit(0, 90, 72, 50000, CASTEL);
+    gameStage.field[95][67].searched = true;
+
+    if(!cv.isCastelPoint(90, 72)) return false;
 
     return true;
   }
