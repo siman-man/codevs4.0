@@ -187,6 +187,7 @@ struct Node{
   int troopsId;             // 滞在中の軍隊ID
   int myUnitCount[7];       // 自軍の各ユニット数
   int enemyUnitCount[7];    // 相手の各ユニット数
+  int enemyAttackCount[7];  // 敵の攻撃の数
   int timestamp;            // タイムスタンプ
   set<int> seenMembers;     // ノードを監視している自軍のメンバー
   set<int> myUnits;         // 自軍のIDリスト
@@ -855,6 +856,7 @@ class Codevs{
       Node node;
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
+      memset(node.enemyAttackCount, 0, sizeof(node.enemyAttackCount));
       node.seenCount = 0;
       node.cost = 0;
       node.stamp = 0;
@@ -1545,6 +1547,43 @@ class Codevs{
     }
 
     /*
+     * 敵の攻撃を受ける可能性があるマスにチェックを付ける
+     */
+    void checkEnemyMark(Unit *enemy){
+
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(enemy->y, enemy->x), 0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop();
+
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > enemy->attackRange) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = getNode(coord.y, coord.x);
+        node->enemyAttackCount[enemy->type] += 1;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx), dist+1));
+        }
+      }
+    }
+
+    /*
+     * ノードを取得する
+     */
+    Node* getNode(int y, int x){
+      return &gameStage.field[y][x];
+    }
+
+    /*
      * 探索時の基本的なコストを付ける
      * - 壁から3マスは移動しなくても探索可能
      */
@@ -1894,6 +1933,7 @@ class Codevs{
 
           memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
           memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
+          memset(node->enemyAttackCount, 0, sizeof(node->enemyAttackCount));
         }
       }
     }
@@ -2421,6 +2461,14 @@ class Codevs{
       addMyUnit(unitId, y, x, hp, unitType);
       return &unitList[unitId];
     }
+
+    /*
+     * テスト用のコード(ダミーユニットの作成を行う)
+     */
+    Unit* createDummyEnemyUnit(int unitId, int y, int x, int hp, int unitType){
+      addEnemyUnit(unitId, y, x, hp, unitType);
+      return &unitList[unitId];
+    }
 };
 
 /*
@@ -2474,6 +2522,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase41:\t%s\n", testCase41()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase42:\t%s\n", testCase42()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase43:\t%s\n", testCase43()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase44:\t%s\n", testCase44()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3477,6 +3526,22 @@ class CodevsTest{
     gameStage.field[95][67].searched = true;
 
     if(!cv.isCastelPoint(90, 72)) return false;
+
+    return true;
+  }
+
+  /*
+   * Case44: 敵の攻撃を受ける範囲をマークつけることが出来る
+   */
+  bool testCase44(){
+    cv.stageInitialize();
+
+    Unit *enemy = cv.createDummyEnemyUnit(0, 50, 50, 2000, WORKER);
+    cv.checkEnemyMark(enemy);
+
+    Node *node = cv.getNode(50, 50);
+
+    if(node->enemyAttackCount[WORKER] != 1) return false;
 
     return true;
   }
