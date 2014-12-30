@@ -415,6 +415,10 @@ class Codevs{
       // 現在のターン数(0-index)
       scanf("%d", &turn);
 
+      if(currentStageNumber == 23 && turn % 10 == 0){
+        fprintf(stderr,"totalTurn = %d\n", totalTurn);
+      }
+
       // 資源数
       scanf("%d", &myResourceCount);
 
@@ -580,12 +584,15 @@ class Codevs{
       unit.movable      = unitCanMove[unitType];
       unit.timestamp    = turn;
 
+      Node *node = getNode(y, x);
+
       // 敵軍の城の座標を更新
       if(unitType == CASTEL){
         enemyCastelCoordY = y;
         enemyCastelCoordX = x;
       }
 
+      node->enemyUnitCount[unitType] += 1;
       unitList[unitId] = unit;
       enemyActiveUnitList.insert(unitId);
       unitIdCheckList[unitId] = true;
@@ -600,10 +607,32 @@ class Codevs{
     }
 
     /*
+     * 資源マスが占領されているかどうかを調べる
+     */
+    bool isOccupied(int y, int x){
+      Node *node = getNode(y, x);
+      return (node->enemyUnitCount[WORKER] >= 4);
+    }
+
+    /*
+     * 突撃する人数を変える
+     */ 
+    void updateTroopsLimit(Unit *unit){
+      if(gameStage.gameSituation == ONRUSH){
+        Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
+
+        if(node->enemyUnitCount[BASE] == 0){
+          unit->troopsLimit = 10;
+        }
+      }
+    }
+
+    /*
      * 最初のモードを決める
      */
     int directFirstMode(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
+      updateTroopsLimit(unit);
 
       switch(unit->type){
         case WORKER:
@@ -941,13 +970,15 @@ class Codevs{
       unit->hp        = hp;
       unit->timestamp = turn;
 
-      if(unit->beforeHp == unit->hp){
-        gameStage.field[y][x].nodamage = true; 
+      Node *node = getNode(y, x);
+
+      if(!node->nodamage && unit->beforeHp == unit->hp){
+        node->nodamage = true; 
         checkNoEnemyCastel(y,x);
       }
 
-      gameStage.field[y][x].myUnitCount[unit->type] += 1;
-      gameStage.field[y][x].myUnits.insert(unitId);
+      node->myUnitCount[unit->type] += 1;
+      node->myUnits.insert(unitId);
     }
 
     /*
@@ -963,6 +994,10 @@ class Codevs{
       unit->x         = x;
       unit->hp        = hp;
       unit->timestamp = turn;
+
+      Node *node = getNode(y, x);
+
+      node->enemyUnitCount[unit->type] += 1;
     }
 
     /*
@@ -1005,6 +1040,7 @@ class Codevs{
      */
     int directUnitMode(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
+      updateTroopsLimit(unit);
 
       switch(unit->type){
         case WORKER:
@@ -1160,7 +1196,6 @@ class Codevs{
         Node *node = &gameStage.field[y][x];
 
         if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x)){
-          //fprintf(stderr,"turn %d, - unit %d target: y = %d, x = %d, unit->y = %d, unit->x = %d\n", turn, unit->id, y, x, unit->y, unit->x);
           node->rockon = true;
           unit->resourceY = y;
           unit->resourceX = x;
@@ -1226,12 +1261,12 @@ class Codevs{
 
       while(it != tempList.end()){
         Unit *enemy = &unitList[*it];
-        Node *node = &gameStage.field[enemy->y][enemy->x];
+        Node *node = getNode(enemy->y, enemy->x);
 
         if(enemy->timestamp != turn && node->timestamp == turn){
           removeEnemyUnit(enemy);
-        }else if(turn == 153){
-          //fprintf(stderr,"id = %d alive, y = %d, x = %d\n", enemy->id, enemy->y, enemy->x);
+        }else if(enemy->timestamp == turn){
+          checkEnemyMark(enemy);
         }
 
         it++;
@@ -1306,7 +1341,7 @@ class Codevs{
                 }else if(turn <= 10){
                   return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
                 }else{
-                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost;
+                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-200)/10;
                 }
               }
               break;
@@ -2538,6 +2573,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase43:\t%s\n", testCase43()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase44:\t%s\n", testCase44()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase45:\t%s\n", testCase45()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase46:\t%s\n", testCase46()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3585,6 +3621,24 @@ class CodevsTest{
     if(cv.calcReceivedCombatDamage(knight) != 500) return false;
     if(cv.calcReceivedCombatDamage(fighter) != 200) return false;
     if(cv.calcReceivedCombatDamage(assasin) != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * Case46: 資源マスが占領されているかどうかを調べる
+   */
+  bool testCase46(){
+    cv.stageInitialize();
+
+    cv.addResourceNode(50, 50);
+    if(cv.isOccupied(50, 50)) return false;
+
+    for(int i = 0; i < 5; i++){
+      cv.addEnemyUnit(i, 50, 50, 2000, WORKER);
+    }
+
+    if(!cv.isOccupied(50, 50)) return false;
 
     return true;
   }
