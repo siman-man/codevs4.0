@@ -22,7 +22,7 @@ typedef long long ll;
 // 役割一覧
 const int WORKER          =  0; // ワーカー
 const int KNIGHT          =  1; // ナイト
-const int FIGHER          =  2; // ファイター
+const int FIGHTER          =  2; // ファイター
 const int ASSASIN         =  3; // アサシン
 const int CASTEL          =  4; // 城
 const int VILLAGE         =  5; // 村
@@ -44,7 +44,7 @@ const int MOVE_LEFT       =  3; // 左に移動
 const int MOVE_RIGHT      =  4; // 右に移動
 const int CREATE_WORKER   =  5; // ワーカーを生産
 const int CREATE_KNIGHT   =  6; // ナイトを生産
-const int CREATE_FIGHER   =  7; // ファイターを生産
+const int CREATE_FIGHTER   =  7; // ファイターを生産
 const int CREATE_ASSASIN  =  8; // アサシンを生産
 const int CREATE_CASTEL   =  9; // 城を生産
 const int CREATE_VILLAGE  = 10; // 村を生産
@@ -626,8 +626,8 @@ class Codevs{
             return DESTROY;
           }
           break;
-        case FIGHER:
-          if(node->myUnitCount[FIGHER] < ATTACK_NUM){
+        case FIGHTER:
+          if(node->myUnitCount[FIGHTER] < ATTACK_NUM){
             return STAY;
           }else{
             return DESTROY;
@@ -1023,7 +1023,7 @@ class Codevs{
             return STAY;
           }
           break;
-        case FIGHER:
+        case FIGHTER:
           switch(unit->role){
             case LEADER:
               if(unit->troopsCount >= unit->troopsLimit){
@@ -1117,7 +1117,7 @@ class Codevs{
     int directUnitRole(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
 
-      if(unit->type == ASSASIN || unit->type == FIGHER || unit->type == KNIGHT){
+      if(unit->type == ASSASIN || unit->type == FIGHTER || unit->type == KNIGHT){
         if(!existLeader(unit->y, unit->x)){
           node->troopsId = unit->id;
           unit->townId = node;
@@ -1337,7 +1337,7 @@ class Codevs{
               break;
           }
           break;
-        case FIGHER:
+        case FIGHTER:
           if(unit->role == LEADER){
             return calcLeaderEvaluation(unit, operation);
           }else{
@@ -1561,7 +1561,7 @@ class Codevs{
         Coord coord = c.first;
         int dist = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || dist > enemy->attackRange) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || dist > enemy->attackRange+1) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = getNode(coord.y, coord.x);
@@ -1574,6 +1574,20 @@ class Codevs{
           if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx), dist+1));
         }
       }
+    }
+
+    /*
+     * 敵から受けるかもしれないダメージを計算する
+     */
+    int calcReceivedCombatDamage(Unit *unit){
+      int damage = 0;
+      Node *node = getNode(unit->y, unit->x);
+
+      for(int enemyType = 0; enemyType < UNIT_MAX; enemyType++){
+        damage += DAMAGE_TABLE[enemyType][unit->type] * node->enemyAttackCount[enemyType];
+      }
+
+      return damage;
     }
 
     /*
@@ -2181,9 +2195,9 @@ class Codevs{
             return false;
           }
           break;
-        case CREATE_FIGHER:
-          if(canBuild(unit->type, FIGHER)){
-            createUnit(unit->y, unit->x, FIGHER);
+        case CREATE_FIGHTER:
+          if(canBuild(unit->type, FIGHTER)){
+            createUnit(unit->y, unit->x, FIGHTER);
           }else{
             return false;
           }
@@ -2254,8 +2268,8 @@ class Codevs{
         case CREATE_KNIGHT:
           deleteUnit(unit->y, unit->x, KNIGHT);
           break;
-        case CREATE_FIGHER:
-          deleteUnit(unit->y, unit->x, FIGHER);
+        case CREATE_FIGHTER:
+          deleteUnit(unit->y, unit->x, FIGHTER);
           break;
         case CREATE_ASSASIN:
           deleteUnit(unit->y, unit->x, ASSASIN);
@@ -2523,6 +2537,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase42:\t%s\n", testCase42()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase43:\t%s\n", testCase43()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase44:\t%s\n", testCase44()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase45:\t%s\n", testCase45()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -2700,7 +2715,7 @@ class CodevsTest{
     if(cv.canBuild(castel->type, KNIGHT)) return false;
     if(cv.canBuild(village->type, WORKER)) return false;
     if(cv.canBuild(base->type, KNIGHT)) return false;
-    if(cv.canBuild(base->type, FIGHER)) return false;
+    if(cv.canBuild(base->type, FIGHTER)) return false;
 
     myResourceCount = 20;
     if(!cv.canBuild(base->type, KNIGHT)) return false;
@@ -2711,9 +2726,9 @@ class CodevsTest{
     if(!cv.canBuild(village->type, WORKER)) return false;
     if(!cv.canBuild(castel->type, WORKER)) return false;
     if(!cv.canBuild(base->type, KNIGHT)) return false;
-    if(!cv.canBuild(base->type, FIGHER)) return false;
+    if(!cv.canBuild(base->type, FIGHTER)) return false;
     if(cv.canBuild(base->type, ASSASIN)) return false;
-    if(cv.canBuild(village->type, FIGHER)) return false;
+    if(cv.canBuild(village->type, FIGHTER)) return false;
 
     myResourceCount = 60;
     if(!cv.canBuild(base->type, ASSASIN)) return false;
@@ -2723,7 +2738,7 @@ class CodevsTest{
     myResourceCount = 100;
     if(!cv.canBuild(worker->type, VILLAGE)) return false;
     if(!cv.canBuild(base->type, KNIGHT)) return false;
-    if(!cv.canBuild(base->type, FIGHER)) return false;
+    if(!cv.canBuild(base->type, FIGHTER)) return false;
     if(!cv.canBuild(base->type, ASSASIN)) return false;
     if(cv.canBuild(worker->type, BASE)) return false;
 
@@ -2775,10 +2790,10 @@ class CodevsTest{
 
     if(node.opened) return false;
     if(node.myUnitCount[WORKER] != 0) return false;
-    if(node.myUnitCount[FIGHER] != 0) return false;
+    if(node.myUnitCount[FIGHTER] != 0) return false;
     if(node.myUnitCount[BASE] != 0) return false;
     if(node.enemyUnitCount[WORKER] != 0) return false;
-    if(node.enemyUnitCount[FIGHER] != 0) return false;
+    if(node.enemyUnitCount[FIGHTER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenMembers.size() != 0) return false;
     if(node.timestamp != 0) return false;
@@ -2900,7 +2915,7 @@ class CodevsTest{
     if(!cv.unitAction(unit, MOVE_RIGHT)) return false;
     if(cv.unitAction(unit, CREATE_WORKER)) return false;
     if(cv.unitAction(unit, CREATE_KNIGHT)) return false;
-    if(cv.unitAction(unit, CREATE_FIGHER)) return false;
+    if(cv.unitAction(unit, CREATE_FIGHTER)) return false;
     if(cv.unitAction(unit, CREATE_ASSASIN)) return false;
     if(!cv.unitAction(unit, CREATE_VILLAGE)) return false;
     if(!cv.unitAction(unit, CREATE_BASE)) return false;
@@ -3542,6 +3557,34 @@ class CodevsTest{
     Node *node = cv.getNode(50, 50);
 
     if(node->enemyAttackCount[WORKER] != 1) return false;
+
+    node = cv.getNode(50, 53);
+    if(node->enemyAttackCount[WORKER] != 1) return false;
+
+    node = cv.getNode(50, 54);
+    if(node->enemyAttackCount[WORKER] != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * Case45: 敵の攻撃のダメージの計算を行う
+   */
+  bool testCase45(){
+    cv.stageInitialize();
+
+    Unit *enemy   = cv.createDummyEnemyUnit(0, 50, 50, 5000, KNIGHT);
+    Unit *worker  = cv.createDummyUnit(1, 50, 49, 2000, WORKER);
+    Unit *knight  = cv.createDummyUnit(2, 50, 48, 5000, KNIGHT);
+    Unit *fighter = cv.createDummyUnit(3, 50, 47, 5000, FIGHTER);
+    Unit *assasin = cv.createDummyUnit(4, 50, 46, 5000, ASSASIN);
+
+    cv.checkEnemyMark(enemy);
+
+    if(cv.calcReceivedCombatDamage(worker) != 100) return false;
+    if(cv.calcReceivedCombatDamage(knight) != 500) return false;
+    if(cv.calcReceivedCombatDamage(fighter) != 200) return false;
+    if(cv.calcReceivedCombatDamage(assasin) != 0) return false;
 
     return true;
   }
