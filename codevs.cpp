@@ -416,7 +416,7 @@ class Codevs{
       scanf("%d", &turn);
 
       if(currentStageNumber == 23 && turn % 10 == 0){
-        fprintf(stderr,"totalTurn = %d\n", totalTurn);
+        fprintf(stderr,"totalTurn = %d\n", totalTurn + turn);
       }
 
       // 資源数
@@ -621,8 +621,8 @@ class Codevs{
       if(gameStage.gameSituation == ONRUSH){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
 
-        if(node->enemyUnitCount[BASE] == 0){
-          unit->troopsLimit = 10;
+        if(node->enemyUnitCount[BASE] == 0 && attackCount <= 1){
+          unit->troopsLimit = 20;
         }
       }
     }
@@ -649,14 +649,14 @@ class Codevs{
           return NONE;
           break;
         case KNIGHT:
-          if(node->myUnitCount[KNIGHT] < ATTACK_NUM){
+          if(unit->troopsCount < unit->troopsLimit){
             return STAY;
           }else{
             return DESTROY;
           }
           break;
         case FIGHTER:
-          if(node->myUnitCount[FIGHTER] < ATTACK_NUM){
+          if(unit->troopsCount < unit->troopsLimit){
             return STAY;
           }else{
             return DESTROY;
@@ -1051,12 +1051,29 @@ class Codevs{
           }
           break;
         case KNIGHT:
-          if(unit->mode == STAY && node->myUnitCount[KNIGHT] < ATTACK_NUM){
-            return STAY;
-          }else if(node->myUnitCount[KNIGHT] >= ATTACK_NUM){
-            return DESTROY;
-          }else{
-            return STAY;
+          switch(unit->role){
+            case LEADER:
+              if(unit->troopsCount >= unit->troopsLimit){
+                if(unit->townId != NULL){
+                  unit->townId = NULL;
+                  node->troopsId = UNDEFINED;
+                }
+
+                return DESTROY;
+              }else if(unit->mode == STAY && unit->troopsCount < unit->troopsLimit){
+                return STAY;
+              }else{
+                return DESTROY;
+              }
+              break;
+            default:
+              Unit *leader = &unitList[unit->leaderId];
+              if(leader->mode == DESTROY){
+                return DESTROY;
+              }else{
+                return STAY;
+              }
+              break;
           }
           break;
         case FIGHTER:
@@ -1333,15 +1350,15 @@ class Codevs{
             case SEARCH:
               if(operation == NO_MOVE){
                 return MIN_VALUE;
-              }else if(operation == CREATE_BASE && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || gameStage.castelAttack)){
+              }else if(operation == CREATE_BASE && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || gameStage.castelAttack || gameStage.incomeResource >= 70)){
                 return 100000;
               }else{
                 if(isDie(unit, unit->y, unit->x)){
                   return -10000;
                 }else if(turn <= 10){
-                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
                 }else{
-                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-200)/10;
+                  return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 3 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
                 }
               }
               break;
@@ -1370,6 +1387,13 @@ class Codevs{
             case NONE:
               return calcNoneBaseEvaluation(unit, operation);
               break;
+          }
+          break;
+        case KNIGHT:
+          if(unit->role == LEADER){
+            return calcLeaderEvaluation(unit, operation);
+          }else{
+            return calcCombatEvaluation(unit, operation);
           }
           break;
         case FIGHTER:
@@ -1472,6 +1496,8 @@ class Codevs{
      * リーダ時の行動パターン
      */
     int calcLeaderEvaluation(Unit *unit, int operation){
+      Node *node = getNode(unit->y, unit->x);
+
       switch(unit->mode){
         case STAY:
           if(operation != NO_MOVE){
@@ -1482,7 +1508,15 @@ class Codevs{
           break;
         case DESTROY:
           if(gameStage.gameSituation == ONRUSH){
-            return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
+            if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 20){
+              if(operation == NO_MOVE){
+                return 100 - abs(2-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
+              }else{
+                return -100 - abs(2-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
+              }
+            }else{
+              return -1 * abs(2-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
+            }
           }else if(!gameStage.castelAttack){
             return -2 * calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX) + calcManhattanDist(unit->y, unit->x, 0, 0) - gameStage.field[unit->y][unit->x].stamp;
           }else{
@@ -1511,10 +1545,11 @@ class Codevs{
     int calcCombatEvaluation(Unit *unit, int operation){
       Unit *leader = &unitList[unit->leaderId];
       Node *node = &gameStage.field[unit->y][unit->x];
+      int limit = 10;
 
       switch(unit->mode){
         case STAY:
-          if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= 10){
+          if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= limit){
             return -100 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x);
           }else{
             return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
@@ -1523,7 +1558,7 @@ class Codevs{
         case DESTROY:
           if(leader->mode == DESTROY){
             if(gameStage.gameSituation == ONRUSH){
-              if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 10 && unit->y == leader->y && unit->x == leader->x){
+              if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= limit && unit->y == leader->y && unit->x == leader->x){
                 return 100;
               }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 10){
                 return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
@@ -1531,7 +1566,7 @@ class Codevs{
                 return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
               }
             }else{
-              if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= 10 && unit->y == leader->y && unit->x == leader->x){
+              if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= limit && unit->y == leader->y && unit->x == leader->x){
                 return 100;
               }else{
                 return -200 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type];
@@ -1596,7 +1631,7 @@ class Codevs{
         Coord coord = c.first;
         int dist = c.second;
 
-        if(checkList[coord.y*WIDTH+coord.x] || dist > enemy->attackRange+1) continue;
+        if(checkList[coord.y*WIDTH+coord.x] || dist > enemy->attackRange) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = getNode(coord.y, coord.x);
