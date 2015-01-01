@@ -271,6 +271,8 @@ int myCastelCoordY;           // 自軍の城のy座標
 int myCastelCoordX;           // 自軍の城のx座標
 int enemyCastelCoordY;        // 敵軍の城のy座標
 int enemyCastelCoordX;        // 敵軍の城のx座標
+int hitPointY;                // 敵の城の攻撃を受けた座標
+int hitPointX;                // 敵の城の攻撃を受けた座標
 Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
 set<int> myActiveUnitList;    // 生存している自軍のユニットのIDリスト
 set<int> enemyActiveUnitList; // 生存している敵軍のユニットのIDリスト
@@ -1351,6 +1353,9 @@ class Codevs{
               int y = id / WIDTH;
               int x = id % WIDTH;
 
+              hitPointY = unit->y;
+              hitPointX = unit->x;
+
               gameStage.targetY = y;
               gameStage.targetX = x;
             }
@@ -1451,7 +1456,7 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || myResourceCount >= 1500)){
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || myResourceCount >= 1200)){
         return 10000000;
       }else{
         if(isDie(unit, unit->y, unit->x)){
@@ -1463,12 +1468,18 @@ class Codevs{
         }else{
           if(unit->type != WORKER){
             if(gameStage.gameSituation == ONRUSH){
-              return 100 * myResourceCount + - 10 * destDist;
+              return 100 * myResourceCount - 10 * destDist - max(0, calcReceivedCombatDamage(unit)-1000)/10;
             }else{
               return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 5 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-1000)/10 + 5 * aroundMyUnitDist(unit);
             }
           }else{
-            return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
+            if(gameStage.gameSituation == ONRUSH){
+              return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
+            }else if(operation == CREATE_VILLAGE && unit->y == hitPointY && unit->x == hitPointX && node->myUnitCount[VILLAGE] == 0){
+              return 900000000;
+            }else{
+              return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
+            }
           }
         }
       }
@@ -1520,7 +1531,7 @@ class Codevs{
         return 100;
       }else if(operation != CREATE_WORKER && gameStage.gameSituation == WARNING && village->createWorkerCount >= 5){
         return 1000;
-      }else if(operation == CREATE_WORKER && wallDist > 10 && centerDist <= 70 && village->createWorkerCount <= 5 && income < createLimit){
+      }else if(operation == CREATE_WORKER && wallDist > 10 && centerDist <= 70 && village->createWorkerCount <= 5){
         return 110;
       }else if(operation != CREATE_WORKER){
         return 10;
@@ -1550,7 +1561,7 @@ class Codevs{
       }else if(operation == CREATE_FIGHTER && attackCount > 1){
         return 200;
       }else if(operation == CREATE_KNIGHT && base->createKnightCount < 5){
-        return 200;
+        return -200;
       }else{
         return 0;
       }
@@ -1597,7 +1608,7 @@ class Codevs{
           if(gameStage.gameSituation == ONRUSH){
             int aroundCastelEnemyCount = aroundEnemyCount(enemyCastelCoordY, enemyCastelCoordX, 1);
 
-            if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= unitCount){
+            if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 30){
               int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 14;
               if(operation == NO_MOVE){
                 return 100 - abs(diff-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
@@ -1917,6 +1928,28 @@ class Codevs{
     }
 
     /*
+     * 安産地帯かどうかを調べる
+     */
+    bool isSafePoint(int ypos, int xpos, int eyeRange){
+      int enemyCount = 0;
+
+      set<int>::iterator it = enemyActiveUnitList.begin();
+
+      while(it != enemyActiveUnitList.end()){
+        Unit *enemy = &unitList[*it];
+        int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
+
+        if(dist <= eyeRange && enemy->type != WORKER){
+          enemyCount += 1;
+        }
+
+        it++;
+      }
+
+      return enemyCount <= 0;
+    }
+
+    /*
      * 敵の城からのダメージを受けたかどうかの判定
      */
     bool isCastelDamage(Unit *unit){
@@ -2021,7 +2054,6 @@ class Codevs{
           Node *node = &gameStage.field[y][x];
 
           if(dist == 10 && node->enemyCastel && isCastelPoint(y,x)){
-            //fprintf(stderr,"list y = %d, x = %d\n",y, x);
             gameStage.enemyCastelPointList.push(y*WIDTH+x);
           }
         }
