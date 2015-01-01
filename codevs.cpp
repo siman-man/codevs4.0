@@ -2831,6 +2831,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase46:\t%s\n", testCase46()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase47:\t%s\n", testCase47()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase48:\t%s\n", testCase48()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase49:\t%s\n", testCase49()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3943,6 +3944,25 @@ class CodevsTest{
 
     Unit *enemy2 = cv.createDummyEnemyUnit(3, 10, 10, 2000, WORKER);
     if(cv.isKilled(enemy)) return false;
+
+    return true;
+  }
+
+  /*
+   * 倒せる敵の数を数えられているかどうか
+   */
+  bool testCase49(){
+    cv.stageInitialize();
+
+    cv.createDummyEnemyUnit(0, 10, 10, 2000, WORKER);
+
+    cv.createDummyUnit(1, 10, 10, 5000, ASSASIN);
+    
+    if(cv.canKillEnemyCount(10, 10, 2) != 0) return false;
+
+    cv.createDummyUnit(2, 10, 11, 5000, ASSASIN);
+
+    if(cv.canKillEnemyCount(10, 10, 2) != 1) return false;
 
     return true;
   }
