@@ -326,7 +326,7 @@ class Codevs{
      * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
-      totalTurn += turn;
+      totalTurn += (turn == 0)? 0 : turn+1;
       fprintf(stderr,"total turn: %d\n", totalTurn);
       fprintf(stderr,"stageInitialize =>\n");
       // ユニットのチェックリストの初期化
@@ -635,7 +635,7 @@ class Codevs{
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
 
         if(node->enemyUnitCount[BASE] == 0 && attackCount <= 1){
-          unit->troopsLimit = 20;
+          unit->troopsLimit = 10;
         }
       }else{
         if(attackCount == 0 && gameStage.enemyEncountCount[ASSASIN] > 0){
@@ -1209,7 +1209,11 @@ class Codevs{
           unit->troopsCount = 1;
 
           if(attackCount == 0){
-            unit->troopsLimit = (gameStage.enemyEncountCount[ASSASIN] > 0)? 20 : 20;
+            if(gameStage.enemyEncountCount[ASSASIN] > 0){
+              unit->troopsLimit = 20;
+            }else{
+              unit->troopsLimit = 20;
+            }
           }else{
             unit->troopsLimit = 1;
           }
@@ -1486,7 +1490,7 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || myResourceCount >= 1200)){
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= 70 || myResourceCount >= 1000)){
         return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
@@ -1494,7 +1498,7 @@ class Codevs{
         }else if(turn <= 20){
           int direct = (operation == MOVE_DOWN || operation == MOVE_LEFT)? 1 : 0;
           return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit) + direct;
-        }else if(turn <= 90){
+        }else if(turn <= 95){
           return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
         }else{
           if(unit->type != WORKER){
@@ -1516,7 +1520,7 @@ class Codevs{
             }else if(operation == CREATE_VILLAGE && unit->y == hitPointY && unit->x == hitPointX && node->myUnitCount[VILLAGE] <= 1){
               return 900000000;
             }else{
-              return 50 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
+              return 50 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10 + 10 * topLeftDist;
             }
           }
         }
@@ -1655,7 +1659,7 @@ class Codevs{
             int aroundCastelEnemyCount = aroundEnemyCount(enemyCastelCoordY, enemyCastelCoordX, 1);
 
             if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 30){
-              int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 14;
+              int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 12;
               if(operation == NO_MOVE){
                 return 100 - abs(diff-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
               }else{
@@ -1663,7 +1667,7 @@ class Codevs{
               }
             }else{
               int dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
-              int diff = (aroundCastelEnemyCount+dist/2+5 <= 40 || dist <= 10)? 0 : 14;
+              int diff = (aroundCastelEnemyCount+dist/2+5 <= 40 || dist <= 10)? 0 : 12;
               int diffY = abs(unit->y - enemyCastelCoordY);
               int diffX = abs(unit->x - enemyCastelCoordX);
               int diffAll = abs(diffY - diffX);
