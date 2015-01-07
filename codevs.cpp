@@ -55,6 +55,16 @@ const int OPENING = 0;  // 序盤戦
 const int WARNING = 1;  // 敵ユニットを検知
 const int DANGER  = 2;  // 自軍の白の視野に敵を確認
 
+// 敵AIの一覧
+const int CHOKUDAI  = 0;
+const int COLUN     = 1;
+const int GELB      = 2;
+const int GRUN      = 3;
+const int LILA      = 4;
+const int ROSA      = 5;
+const int SCHWARZ   = 6;
+const int ZINNOBER  = 7;
+
 
 // ユニットの行動タイプ
 const int NONE    = 0;  // 何もしない(何も出来ない)
@@ -100,6 +110,7 @@ const int HEIGHT        = 100;    // フィールドの横幅
 const int WIDTH         = 100;    // フィールドの縦幅
 
 int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
+int reverseCoordTable[WIDTH];     // 座標系を逆にするためのテーブル
 
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
@@ -216,6 +227,7 @@ struct Unit{
   int beforeY;            // 前のターンのy座標
   int beforeX;            // 前のターンのx座標
   int hp;                 // HP
+  int birthday;           // 生成されたターン
   int beforeHp;           // 前のターンのHP
   int type;               // ユニットの種別
   int eyeRange;           // 視野
@@ -238,6 +250,7 @@ struct GameStage{
   int enemyEncountCount[UNIT_MAX];  // 遭遇した敵の数
   int baseCount;                    // 拠点の数
   bool castelAttack;                // 城からの攻撃を受けている
+  bool enemyType[8];                   // 敵の種類
   Node field[HEIGHT][WIDTH];        // ゲームフィールド
   queue<int> enemyCastelPointList;    // 敵の城の座標候補
 };
@@ -280,6 +293,7 @@ set<int> myActiveUnitList;    // 生存している自軍のユニットのIDリ
 set<int> enemyActiveUnitList; // 生存している敵軍のユニットのIDリスト
 set<int> resourceNodeList;    // 資源マスのリスト
 
+bool firstPlayer;             // 1P側かどうかの確認
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
@@ -300,6 +314,7 @@ class Codevs{
       totalTurn = 0;
 
       manhattanDistInitialize();
+      reverseCoordTableInitialize();
 
       // 壁判定の初期化処理
       for(int y = 0; y <= HEIGHT+1; y++){
@@ -326,6 +341,15 @@ class Codevs{
     }
 
     /*
+     * 座標系変換テーブルの初期化
+     */
+    void reverseCoordTableInitialize(){
+      for(int i = 0; i < WIDTH; i++){
+        reverseCoordTable[i] = 99 - i;
+      }
+    }
+
+    /*
      * ステージ開始直前に行う初期化処理
      */
     void stageInitialize(){
@@ -334,6 +358,9 @@ class Codevs{
       fprintf(stderr,"stageInitialize =>\n");
       // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
+
+      // 敵の種類をリセット
+      memset(gameStage.enemyType, false, sizeof(gameStage.enemyType));
 
       // アクティブユニットリストの初期化
       myActiveUnitList.clear();
@@ -492,26 +519,27 @@ class Codevs{
      */
     void addMyUnit(int unitId, int y, int x, int hp, int unitType){
       Unit unit;
-      unit.id           = unitId;
-      unit.y            = y;
-      unit.x            = x;
-      unit.hp           = hp;
-      unit.beforeHp     = hp;
-      unit.type         = unitType;
-      unit.destY        = UNDEFINED;
-      unit.destX        = UNDEFINED;
-      unit.resourceY    = UNDEFINED;
-      unit.resourceX    = UNDEFINED;
-      unit.createWorkerCount = 0;
-      unit.createKnightCount = 0;
-      unit.castelAttackCount = 0;
-      unit.leaderId     = UNDEFINED;
-      unit.troopsCount  = 0;
-      unit.attackRange  = unitAttackRange[unitType];
-      unit.eyeRange     = unitEyeRange[unitType];
-      unit.movable      = unitCanMove[unitType];
-      unit.moved        = false;
-      unit.timestamp    = turn;
+      unit.id                 = unitId;
+      unit.y                  = y;
+      unit.x                  = x;
+      unit.hp                 = hp;
+      unit.beforeHp           = hp;
+      unit.type               = unitType;
+      unit.destY              = UNDEFINED;
+      unit.destX              = UNDEFINED;
+      unit.resourceY          = UNDEFINED;
+      unit.resourceX          = UNDEFINED;
+      unit.createWorkerCount  = 0;
+      unit.createKnightCount  = 0;
+      unit.castelAttackCount  = 0;
+      unit.leaderId           = UNDEFINED;
+      unit.troopsCount        = 0;
+      unit.attackRange        = unitAttackRange[unitType];
+      unit.eyeRange           = unitEyeRange[unitType];
+      unit.movable            = unitCanMove[unitType];
+      unit.moved              = false;
+      unit.birthday           = turn;
+      unit.timestamp          = turn;
 
       // 自軍の城の座標を更新
       if(unitType == CASTEL){
@@ -647,12 +675,14 @@ class Codevs{
       }else{
         if(attackCount == 0 && gameStage.enemyEncountCount[ASSASIN] > 0){
           unit->troopsLimit = 20;
+        }else if(isColun() || isRosa()){
+          unit->troopsLimit = 1;
         }
       }
     }
 
     /*
-     * 最初のモードを決める
+     * ユニットの最初のモードを決める
      */
     int directFirstMode(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
@@ -1076,11 +1106,20 @@ class Codevs{
     int directUnitMode(Unit *unit){
       Node *node = &gameStage.field[unit->y][unit->x];
       updateTroopsLimit(unit);
+      int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
 
       switch(unit->type){
         case WORKER:
           if(unit->mode == PICKING || pickModeCheck(unit)){
-            return PICKING;
+            //if(false && node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
+            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
+            if(node->resource && node->myUnitCount[VILLAGE] >= 1 && castelDist >= 20 && unit->birthday <= 12){
+            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
+            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && myResourceCount >= 40 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
+              return SEARCH;
+            }else{
+              return PICKING;
+            }
           }else{
             return SEARCH;
           }
@@ -1218,6 +1257,8 @@ class Codevs{
           if(attackCount == 0){
             if(isGrun()){
               unit->troopsLimit = 20;
+            }else if(isChokudai()){
+              unit->troopsLimit = 1;
             }else{
               unit->troopsLimit = 10;
             }
@@ -1245,7 +1286,7 @@ class Codevs{
         Unit *unit = &unitList[*it];
         Node *node = getNode(unit->y, unit->x);
 
-        if(unit->type == VILLAGE && node->myUnitCount[WORKER] >= 5){
+        if(unit->type == VILLAGE && unit->role != COLLIERY && node->myUnitCount[WORKER] >= 5){
           unit->role = COLLIERY;
         }
 
@@ -1257,7 +1298,8 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90);
+      //return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90);
+      return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
     }
 
     /*
@@ -1498,14 +1540,13 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist || myResourceCount >= 1000)){
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist || myResourceCount >= 1000)){
         return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return -10000;
         }else if(turn <= 20){
-          int direct = (operation == MOVE_DOWN || operation == MOVE_LEFT)? 1 : 0;
-          return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit) + direct;
+          return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
         }else if(turn <= 95){
           return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
         }else{
@@ -1610,10 +1651,12 @@ class Codevs{
      * 拠点が動いていない時の評価値
      */
     int calcNoneBaseEvaluation(Unit *base, int operation){
-      if(myResourceCount <= 100 && operation != NO_MOVE) return -100;
+      if(myResourceCount <= 100 && operation != NO_MOVE && gameStage.gameSituation != ONRUSH) return -100;
 
       if(operation == CREATE_ASSASIN){
         return 100;
+      }else if(operation == CREATE_FIGHTER && (isChokudai() || isColun() || isRosa())){
+        return 150;
       }else if(operation == CREATE_FIGHTER && attackCount > 1){
         return 20;
       }else if(operation == CREATE_KNIGHT && base->createKnightCount < 5 && gameStage.enemyEncountCount[ASSASIN] > 5){
@@ -1826,6 +1869,7 @@ class Codevs{
      */
     int aroundMyUnitDist(Unit *unit){
       int minDist = 9999;
+      int secondMinDist = 9999;
       priority_queue< Coord, vector<Coord>, greater<Coord>  > que;
 
       set<int>::iterator it = myActiveUnitList.begin();
@@ -1834,13 +1878,64 @@ class Codevs{
         Unit *other = &unitList[*it];
 
         if(unit->id != other->id && other->movable){
-          minDist = min(minDist, calcManhattanDist(unit->y, unit->x, other->y, other->x));
+          int dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
+
+          if(minDist > dist){
+            secondMinDist = minDist;
+            minDist = dist;
+          }else if(secondMinDist > dist){
+            secondMinDist = dist;
+          }
         }
 
         it++;
       }
 
-      return minDist;
+      return min(minDist, secondMinDist);
+    }
+
+    /*
+     * 敵のタイプをチェックする
+     */
+    void checkEnemyType(){
+      set<int>::iterator it = resourceNodeList.begin(); 
+
+      // 資源マスについて
+      while(it != resourceNodeList.end()){
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+
+        Node *node = getNode(y,x);
+
+        // 資源マス上の村に、WORKERが突っ込んでくる場合はchokudai
+        if(node->myUnitCount[VILLAGE] >= 1 && node->myUnitCount[WORKER] >= 5 && node->enemyUnitCount[VILLAGE] == 0 && node->enemyUnitCount[WORKER] >= 1){
+          //gameStage.enemyType[CHOKUDAI] = true;
+        }
+        // 資源マスの上に村を立てている場合は、chokudaiかlila
+        if(node->enemyUnitCount[VILLAGE] >= 1){
+          //gameStage.enemyType[CHOKUDAI] = true;
+        }
+
+        it++;
+      }
+
+      // ワーカーとの遭遇率が高い
+      if(gameStage.enemyEncountCount[WORKER] >= 35){
+        gameStage.enemyType[COLUN] = true;
+        gameStage.enemyType[ROSA] = true;
+      }
+
+      // 敵の城について
+      if(gameStage.gameSituation == ONRUSH){
+        Node *castel = getNode(enemyCastelCoordY, enemyCastelCoordX);
+        
+        // 城に拠点を構えている
+        if(castel->enemyUnitCount[BASE] >= 1){
+          gameStage.enemyType[CHOKUDAI] = false;
+          gameStage.enemyType[COLUN] = false;
+          gameStage.enemyType[ROSA] = false;
+        }
+      }
     }
 
     /*
@@ -1976,7 +2071,7 @@ class Codevs{
         Unit *enemy = &unitList[*it];
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
 
-        if(dist <= eyeRange && enemy->type != WORKER){
+        if(dist <= eyeRange && enemy->type != WORKER && enemy->type != VILLAGE){
           enemyCount += 1;
         }
 
@@ -2344,6 +2439,9 @@ class Codevs{
         if(turn == 0){
           checkCost();
         }
+
+        // 対戦相手のAIを予測する
+        checkEnemyType();
 
         // 敵の城から攻撃を受けたかどうかのチェック
         enemyCastelAttackCheck();
@@ -2831,21 +2929,46 @@ class Codevs{
     }
 
     /*
+     * 座標系を逆にする(0, 0)を(99, 99)に
+     */
+    Coord reverseCoord(int ypos, int xpos){
+      int ny = reverseCoordTable[ypos];
+      int nx = reverseCoordTable[xpos];
+
+      return Coord(ny,nx);
+    }
+
+    /*
+     * 1P側のプレイヤかどうかの確認
+     */
+    bool isFirstPlayer(){
+      return (calcManhattanDist(0, 0, myCastelCoordY, myCastelCoordX) <= 40);
+    }
+
+    /*
      * rosaかどうかの判定
      */
     bool isRosa(){
-      return gameStage.enemyEncountCount[VILLAGE] == 0;
+      return gameStage.enemyType[ROSA];
     }
 
     /*
      * colunかどうかの判定
      */
     bool isColun(){
-      return gameStage.enemyEncountCount[VILLAGE] == 0;
+      return gameStage.enemyType[COLUN];
+    }
+
+    /*
+     * chokudaiかどうかの判定
+     */
+    bool isChokudai(){
+      return gameStage.enemyType[CHOKUDAI];
     }
 
     /*
      * grunかどうかの判定
+     * - 何もないマスに村を建てる
      */
     bool isGrun(){
       set<int>::iterator it = enemyActiveUnitList.begin();
@@ -2863,6 +2986,13 @@ class Codevs{
       }
 
       return false;
+    }
+
+    /*
+     * lilaかどうかの判定
+     */
+    bool isLila(){
+      return gameStage.enemyType[LILA];
     }
 
     /*
@@ -2980,6 +3110,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase47:\t%s\n", testCase47()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase48:\t%s\n", testCase48()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase49:\t%s\n", testCase49()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase50:\t%s\n", testCase50()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -4111,6 +4242,21 @@ class CodevsTest{
     cv.createDummyUnit(2, 10, 11, 5000, ASSASIN);
 
     if(cv.canKillEnemyCount(10, 10, 2) != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * 座標系が逆になっているかどうか
+   */
+  bool testCase50(){
+    cv.stageInitialize();
+
+    Coord coord1 = cv.reverseCoord(0,0);
+    Coord coord2 = cv.reverseCoord(10,10);
+
+    if(coord1.y != 99 || coord1.x != 99) return false;
+    if(coord2.y != 89 || coord2.x != 89) return false;
 
     return true;
   }
