@@ -789,8 +789,12 @@ class Codevs{
     void updateUnknownPoint(){
       Coord bestCoord;
 
-      if(!gameStage.castelAttack && !gameStage.field[gameStage.targetY][gameStage.targetX].searched){
+      Node *targetNode = getNode(gameStage.targetY, gameStage.targetX);
+
+      if(!gameStage.castelAttack && !targetNode->searched && gameStage.baseCount == 0){
         //fprintf(stderr,"turn = %d, Not Yet Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
+        return;
+      }else if(gameStage.baseCount >= 1 && !targetNode->searched && targetNode->enemyCastel){
         return;
       }else if(!gameStage.castelAttack && gameStage.targetX < 90 && gameStage.targetY < 90 && gameStage.targetY + 10 < 99 && gameStage.targetX + 10 < 99){
         gameStage.targetY += 10;
@@ -798,7 +802,7 @@ class Codevs{
         //fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
         return;
       }else if(gameStage.castelAttack && gameStage.enemyCastelPointList.size() > 0){
-        Node *node = &gameStage.field[gameStage.targetY][gameStage.targetX];
+        Node *node = getNode(gameStage.targetY, gameStage.targetX);
 
         if(node->searched || !node->enemyCastel){
           gameStage.enemyCastelPointList.pop();
@@ -1076,7 +1080,7 @@ class Codevs{
         //fprintf(stderr,"turn = %d, unitId = %d mode = %d, update\n", turn, unit->id, unit->mode);
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
-        if((unit->mode == SEARCH) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
+        if((unit->mode == SEARCH || unit->role == LEADER) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
           if(gameStage.gameSituation == ONRUSH){
             unit->destY = enemyCastelCoordY;
             unit->destX = enemyCastelCoordX;
@@ -1298,6 +1302,7 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
+      Node *node = getNode(unit->y, unit->x);
       //return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90);
       return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
     }
@@ -1540,15 +1545,23 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist || myResourceCount >= 1000)){
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist)){
         return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return -10000;
         }else if(turn <= 20){
-          return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+          if(gameStage.openedNodeCount == 0){
+            return 100 * myResourceCount - 10 * destDist - 2 * stamp - node->cost + 2 * aroundMyUnitDist(unit);
+          }else{
+            return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+          }
         }else if(turn <= 95){
-          return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
+          if(gameStage.openedNodeCount == 0 && false){
+            return 100 * myResourceCount - 20 * destDist - 2 * stamp - node->cost + aroundMyUnitDist(unit);
+          }else{
+            return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
+          }
         }else{
           if(unit->type != WORKER){
             if(gameStage.gameSituation == ONRUSH){
@@ -2892,6 +2905,7 @@ class Codevs{
     Operation directUnitOperation(Unit *unit){
       priority_queue<Operation, vector<Operation>, greater<Operation> > que;
       gameStage.searchedNodeCount = 0;
+      gameStage.openedNodeCount = 0;
 
       //tempGameStage = gameStage;
 
