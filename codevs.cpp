@@ -55,16 +55,6 @@ const int OPENING = 0;  // 序盤戦
 const int WARNING = 1;  // 敵ユニットを検知
 const int DANGER  = 2;  // 自軍の白の視野に敵を確認
 
-// 敵AIの一覧
-const int CHOKUDAI  = 0;
-const int COLUN     = 1;
-const int GELB      = 2;
-const int GRUN      = 3;
-const int LILA      = 4;
-const int ROSA      = 5;
-const int SCHWARZ   = 6;
-const int ZINNOBER  = 7;
-
 
 // ユニットの行動タイプ
 const int NONE    = 0;  // 何もしない(何も出来ない)
@@ -250,7 +240,6 @@ struct GameStage{
   int enemyEncountCount[UNIT_MAX];  // 遭遇した敵の数
   int baseCount;                    // 拠点の数
   bool castelAttack;                // 城からの攻撃を受けている
-  bool enemyType[8];                   // 敵の種類
   Node field[HEIGHT][WIDTH];        // ゲームフィールド
   queue<int> enemyCastelPointList;    // 敵の城の座標候補
 };
@@ -358,9 +347,6 @@ class Codevs{
       fprintf(stderr,"stageInitialize =>\n");
       // ユニットのチェックリストの初期化
       unitIdCheckList.clear();
-
-      // 敵の種類をリセット
-      memset(gameStage.enemyType, false, sizeof(gameStage.enemyType));
 
       // アクティブユニットリストの初期化
       myActiveUnitList.clear();
@@ -545,6 +531,8 @@ class Codevs{
       if(unitType == CASTEL){
         myCastelCoordY = y;
         myCastelCoordX = x;
+
+        fprintf(stderr,"myCastelY = %d, myCastelX = %d\n", y, x);
       }
 
       gameStage.field[y][x].myUnitCount[unitType] += 1;
@@ -675,8 +663,6 @@ class Codevs{
       }else{
         if(attackCount == 0 && gameStage.enemyEncountCount[ASSASIN] > 0){
           unit->troopsLimit = 20;
-        }else if(isColun() || isRosa()){
-          unit->troopsLimit = 1;
         }
       }
     }
@@ -789,12 +775,8 @@ class Codevs{
     void updateUnknownPoint(){
       Coord bestCoord;
 
-      Node *targetNode = getNode(gameStage.targetY, gameStage.targetX);
-
-      if(!gameStage.castelAttack && !targetNode->searched && gameStage.baseCount == 0){
+      if(!gameStage.castelAttack && !gameStage.field[gameStage.targetY][gameStage.targetX].searched){
         //fprintf(stderr,"turn = %d, Not Yet Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
-        return;
-      }else if(gameStage.baseCount >= 1 && !targetNode->searched && targetNode->enemyCastel){
         return;
       }else if(!gameStage.castelAttack && gameStage.targetX < 90 && gameStage.targetY < 90 && gameStage.targetY + 10 < 99 && gameStage.targetX + 10 < 99){
         gameStage.targetY += 10;
@@ -802,7 +784,7 @@ class Codevs{
         //fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
         return;
       }else if(gameStage.castelAttack && gameStage.enemyCastelPointList.size() > 0){
-        Node *node = getNode(gameStage.targetY, gameStage.targetX);
+        Node *node = &gameStage.field[gameStage.targetY][gameStage.targetX];
 
         if(node->searched || !node->enemyCastel){
           gameStage.enemyCastelPointList.pop();
@@ -822,8 +804,7 @@ class Codevs{
         return;
       }else{
         if(gameStage.gameSituation == ONRUSH){
-          assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordY != UNDEFINED);
-          assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordX != UNDEFINED);
+          assert(gameStage.gameSituation == ONRUSH && enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED);
         }
 
         queue<Coord> que;
@@ -838,6 +819,7 @@ class Codevs{
 
           Node *node = getNode(coord.y, coord.x);
 
+          assert(coord.y >= 0 && coord.x >= 0);
           if(node->enemyCastel && calcManhattanDist(coord.y, coord.x, 99, 99) <= 40){
             //fprintf(stderr,"Next point: y = %d, x = %d\n", coord.y, coord.x);
             gameStage.targetY = coord.y;
@@ -853,8 +835,7 @@ class Codevs{
           }
         }
 
-        assert(enemyCastelCoordY >= 0);
-        assert(enemyCastelCoordX >= 0);
+        assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
 
         gameStage.targetY = enemyCastelCoordY;
         gameStage.targetX = enemyCastelCoordX;
@@ -868,8 +849,7 @@ class Codevs{
       map<int, bool> checkList;
       priority_queue< Cell, vector<Cell>, greater<Cell> > que;
 
-      assert(targetY >= 0);
-      assert(targetX >= 0);
+      assert(targetY >= 0 && targetX >= 0);
 
       que.push(Cell(y, x, 0));
 
@@ -1080,7 +1060,7 @@ class Codevs{
         //fprintf(stderr,"turn = %d, unitId = %d mode = %d, update\n", turn, unit->id, unit->mode);
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
-        if((unit->mode == SEARCH || unit->role == LEADER) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
+        if((unit->mode == SEARCH) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
           if(gameStage.gameSituation == ONRUSH){
             unit->destY = enemyCastelCoordY;
             unit->destX = enemyCastelCoordX;
@@ -1096,8 +1076,7 @@ class Codevs{
 
           checkMark(unit->destY, unit->destX);
 
-          assert(unit->destY >= 0);
-          assert(unit->destX >= 0);
+          assert(unit->destY >= 0 && unit->destX >= 0);
         }
 
         it++;
@@ -1261,8 +1240,6 @@ class Codevs{
           if(attackCount == 0){
             if(isGrun()){
               unit->troopsLimit = 20;
-            }else if(isChokudai()){
-              unit->troopsLimit = 1;
             }else{
               unit->troopsLimit = 10;
             }
@@ -1290,7 +1267,7 @@ class Codevs{
         Unit *unit = &unitList[*it];
         Node *node = getNode(unit->y, unit->x);
 
-        if(unit->type == VILLAGE && unit->role != COLLIERY && node->myUnitCount[WORKER] >= 5){
+        if(unit->type == VILLAGE && node->myUnitCount[WORKER] >= 5){
           unit->role = COLLIERY;
         }
 
@@ -1302,7 +1279,6 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      Node *node = getNode(unit->y, unit->x);
       //return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90);
       return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
     }
@@ -1467,8 +1443,7 @@ class Codevs{
           switch(unit->mode){
             case SEARCH:
               //fprintf(stderr,"turn = %d, id = %d, y = %d, x = %d, mode = %d\n", turn, unit->id, unit->destY, unit->destX, unit->mode);
-              assert(unit->destY >= 0);
-              assert(unit->destX >= 0);
+              assert(unit->destY >= 0 && unit->destX >= 0);
               return calcSeacherEvaluation(unit, operation);
               break;
             case PICKING:
@@ -1536,8 +1511,7 @@ class Codevs{
      */
     int calcSeacherEvaluation(Unit *unit, int operation){
       int topLeftDist = calcManhattanDist(unit->y, unit->x, 0, 0);
-      assert(unit->destY >= 0);
-      assert(unit->destX >= 0);
+      assert(unit->destY >= 0 && unit->destX >= 0);
       int destDist = calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
       Node *node = &gameStage.field[unit->y][unit->x];
       int stamp = gameStage.field[unit->y][unit->x].stamp;
@@ -1545,23 +1519,19 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist)){
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist || myResourceCount >= 1000)){
         return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return -10000;
         }else if(turn <= 20){
           if(gameStage.openedNodeCount == 0){
-            return 100 * myResourceCount - 10 * destDist - 2 * stamp - node->cost + 2 * aroundMyUnitDist(unit);
+            return 100 * myResourceCount - 10 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }else{
             return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }
         }else if(turn <= 95){
-          if(gameStage.openedNodeCount == 0 && false){
-            return 100 * myResourceCount - 20 * destDist - 2 * stamp - node->cost + aroundMyUnitDist(unit);
-          }else{
-            return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
-          }
+          return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
         }else{
           if(unit->type != WORKER){
             if(gameStage.gameSituation == ONRUSH){
@@ -1571,8 +1541,7 @@ class Codevs{
             }
           }else{
             if(gameStage.gameSituation == ONRUSH){
-              assert(enemyCastelCoordY >= 0);
-              assert(enemyCastelCoordX >= 0);
+              assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
               int aroundCastelEnemyCount = aroundEnemyCount(enemyCastelCoordY, enemyCastelCoordX, 1);
               int dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
               int diff = (aroundCastelEnemyCount+min(12, dist/2)+5 <= 20 || dist <= 10)? 0 : 12;
@@ -1617,8 +1586,7 @@ class Codevs{
           unit->destX = gameStage.targetX;
           return -10000;
         }else{
-          assert(unit->resourceY >= 0);
-          assert(unit->resourceX >= 0);
+          assert(unit->resourceY >= 0 && unit->resourceX >= 0);
           return -calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
         }
       }
@@ -1664,12 +1632,10 @@ class Codevs{
      * 拠点が動いていない時の評価値
      */
     int calcNoneBaseEvaluation(Unit *base, int operation){
-      if(myResourceCount <= 100 && operation != NO_MOVE && gameStage.gameSituation != ONRUSH) return -100;
+      if(myResourceCount <= 100 && operation != NO_MOVE) return -100;
 
       if(operation == CREATE_ASSASIN){
         return 100;
-      }else if(operation == CREATE_FIGHTER && (isChokudai() || isColun() || isRosa())){
-        return 150;
       }else if(operation == CREATE_FIGHTER && attackCount > 1){
         return 20;
       }else if(operation == CREATE_KNIGHT && base->createKnightCount < 5 && gameStage.enemyEncountCount[ASSASIN] > 5){
@@ -1705,8 +1671,7 @@ class Codevs{
       Node *node = getNode(unit->y, unit->x);
       int unitCount = aroundUnitCount(unit->y, unit->x);
       int stamp = gameStage.field[unit->y][unit->x].stamp;
-      assert(gameStage.targetY >= 0);
-      assert(gameStage.targetX >= 0);
+      assert(gameStage.targetY >= 0 && gameStage.targetX >= 0);
       int targetDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
       int killCount = (unit->troopsCount > 10)? canKillEnemyCount(unit->y, unit->x, unit->attackRange) : 0;
 
@@ -1905,50 +1870,6 @@ class Codevs{
       }
 
       return min(minDist, secondMinDist);
-    }
-
-    /*
-     * 敵のタイプをチェックする
-     */
-    void checkEnemyType(){
-      set<int>::iterator it = resourceNodeList.begin(); 
-
-      // 資源マスについて
-      while(it != resourceNodeList.end()){
-        int y = (*it)/WIDTH;
-        int x = (*it)%WIDTH;
-
-        Node *node = getNode(y,x);
-
-        // 資源マス上の村に、WORKERが突っ込んでくる場合はchokudai
-        if(node->myUnitCount[VILLAGE] >= 1 && node->myUnitCount[WORKER] >= 5 && node->enemyUnitCount[VILLAGE] == 0 && node->enemyUnitCount[WORKER] >= 1){
-          //gameStage.enemyType[CHOKUDAI] = true;
-        }
-        // 資源マスの上に村を立てている場合は、chokudaiかlila
-        if(node->enemyUnitCount[VILLAGE] >= 1){
-          //gameStage.enemyType[CHOKUDAI] = true;
-        }
-
-        it++;
-      }
-
-      // ワーカーとの遭遇率が高い
-      if(gameStage.enemyEncountCount[WORKER] >= 35){
-        gameStage.enemyType[COLUN] = true;
-        gameStage.enemyType[ROSA] = true;
-      }
-
-      // 敵の城について
-      if(gameStage.gameSituation == ONRUSH){
-        Node *castel = getNode(enemyCastelCoordY, enemyCastelCoordX);
-        
-        // 城に拠点を構えている
-        if(castel->enemyUnitCount[BASE] >= 1){
-          gameStage.enemyType[CHOKUDAI] = false;
-          gameStage.enemyType[COLUN] = false;
-          gameStage.enemyType[ROSA] = false;
-        }
-      }
     }
 
     /*
@@ -2453,9 +2374,6 @@ class Codevs{
           checkCost();
         }
 
-        // 対戦相手のAIを予測する
-        checkEnemyType();
-
         // 敵の城から攻撃を受けたかどうかのチェック
         enemyCastelAttackCheck();
 
@@ -2935,10 +2853,8 @@ class Codevs{
      * 渡された座標のマンハッタン距離を計算
      */
     int calcManhattanDist(int y1, int x1, int y2, int x2){
-      assert(y1 >= 0);
-      assert(y2 >= 0);
-      assert(x1 >= 0);
-      assert(x2 >= 0);
+      assert(y1 >= 0 && x1 >= 0);
+      assert(y2 >= 0 && x2 >= 0);
       return manhattanDist[x1*WIDTH+x2] + manhattanDist[y1*WIDTH+y2];
     }
 
@@ -2963,26 +2879,18 @@ class Codevs{
      * rosaかどうかの判定
      */
     bool isRosa(){
-      return gameStage.enemyType[ROSA];
+      return gameStage.enemyEncountCount[VILLAGE] == 0;
     }
 
     /*
      * colunかどうかの判定
      */
     bool isColun(){
-      return gameStage.enemyType[COLUN];
-    }
-
-    /*
-     * chokudaiかどうかの判定
-     */
-    bool isChokudai(){
-      return gameStage.enemyType[CHOKUDAI];
+      return gameStage.enemyEncountCount[VILLAGE] == 0;
     }
 
     /*
      * grunかどうかの判定
-     * - 何もないマスに村を建てる
      */
     bool isGrun(){
       set<int>::iterator it = enemyActiveUnitList.begin();
@@ -3000,13 +2908,6 @@ class Codevs{
       }
 
       return false;
-    }
-
-    /*
-     * lilaかどうかの判定
-     */
-    bool isLila(){
-      return gameStage.enemyType[LILA];
     }
 
     /*
