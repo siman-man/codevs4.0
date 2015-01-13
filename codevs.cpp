@@ -32,9 +32,10 @@ const int LEADER          =  8; // 戦闘隊長
 const int SPY             =  9; // スパイ
 const int COLLIERY        = 10; // 炭鉱(資源マスにワーカーが5人いる状態)
 const int VILLAGE_BREAKER = 11; // 相手の村をひたすら破壊する族
+const int KING            = 12; // 王様
 
 // 行動の基本優先順位
-int movePriority[11] = { 5, 9, 8, 7, 0, 10, 15, 17, 20, 1, 0};
+int movePriority[13] = { 5, 9, 8, 7, 0, 10, 15, 17, 20, 1, 0, 0, 30};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -78,9 +79,10 @@ const int dx[5] = {0, 0, 0,-1, 1};
 // その他
 const int UNDEFINED = -1;     // 未定
 const int REAL = true;        // 確定コマンド
+bool firstPlayer = false;     // 1P側かどうか
 int ATTACK_NUM = 40;          // 突撃を仕掛ける人数
 int attackCount = 0;          // 突撃した回数
-int createLimit = 40;         // 生産に関係する制限
+int createLimit = 220;         // 生産に関係する制限
 
 // 各ユニットへの命令
 const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
@@ -282,7 +284,6 @@ set<int> myActiveUnitList;    // 生存している自軍のユニットのIDリ
 set<int> enemyActiveUnitList; // 生存している敵軍のユニットのIDリスト
 set<int> resourceNodeList;    // 資源マスのリスト
 
-bool firstPlayer;             // 1P側かどうかの確認
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
@@ -405,8 +406,8 @@ class Codevs{
 
 
       // 自軍の城の座標をリセット
-      myCastelCoordY = UNDEFINED;
-      myCastelCoordX = UNDEFINED;
+      // myCastelCoordY = UNDEFINED;
+      // myCastelCoordX = UNDEFINED;
 
       // 敵軍の城の座標をリセット
       enemyCastelCoordY = UNDEFINED;
@@ -466,6 +467,8 @@ class Codevs{
           updateMyUnitStatus(unitId, y, x, hp);
         }
       }
+
+      firstPlayer = firstPlayer || isFirstPlayer();
 
       // 視野内の敵軍のユニット数
       scanf("%d", &enemyAllUnitCount);
@@ -566,6 +569,7 @@ class Codevs{
 
       while(it != myActiveUnitList.end()){
         Unit *other = &unitList[*it];
+        assert(other->y >= 0 && other->x >= 0);
         dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
 
         if(other->role == LEADER && minDist > dist){
@@ -676,7 +680,7 @@ class Codevs{
 
       switch(unit->type){
         case WORKER:
-          if(node->resource && node->myUnitCount[WORKER] <= 5){
+          if(node->resource && node->myUnitCount[WORKER] <= 5 && unit->birthday > 20){
             unit->resourceY = unit->y;
             unit->resourceX = unit->x;
             unit->destY = unit->y;
@@ -870,6 +874,7 @@ class Codevs{
           int nx = cell.x + dx[i];
 
           if(!isWall(ny,nx)){
+            assert(targetY >= 0 && targetX >= 0);
             int nc = calcManhattanDist(ny, nx, targetY, targetX) + node->stamp + node->cost;
             que.push(Cell(ny, nx, cell.cost + nc));
           }
@@ -1087,8 +1092,9 @@ class Codevs{
      * ユニットのモードを更新する
      */
     int directUnitMode(Unit *unit){
-      Node *node = &gameStage.field[unit->y][unit->x];
+      Node *node = getNode(unit->y, unit->x);
       updateTroopsLimit(unit);
+      assert(myCastelCoordY >= 0 && myCastelCoordX >= 0);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
 
       switch(unit->type){
@@ -1096,13 +1102,15 @@ class Codevs{
           if(unit->mode == PICKING || pickModeCheck(unit)){
             //if(false && node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
             //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
-            if(node->resource && node->myUnitCount[VILLAGE] >= 1 && castelDist >= 20 && unit->birthday <= 12){
+            if(node->resource && node->myUnitCount[VILLAGE] >= 1 && castelDist >= 20 && unit->birthday <= 20){
             //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
             //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && myResourceCount >= 40 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
               return SEARCH;
             }else{
               return PICKING;
             }
+          }else if(unit->role == KING){
+            return STAY;
           }else{
             return SEARCH;
           }
@@ -1252,6 +1260,8 @@ class Codevs{
         }else{
           return COMBATANT;
         }
+      }else if(unit->type == WORKER && unit->y == myCastelCoordY && unit->x == myCastelCoordX && turn > 50){
+        return KING;
       }else{
         return unit->type;
       }
@@ -1293,9 +1303,10 @@ class Codevs{
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
         int dist = calcManhattanDist(unit->y, unit->x, y, x);
-        Node *node = &gameStage.field[y][x];
+        Node *node = getNode(y,x);
 
-        if(!node->rockon && dist <= 10 && gameStage.incomeResource < createLimit && checkMinDist(y, x, dist) && !isDie(unit, y, x)){
+        if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x)){
+          fprintf(stderr,"RockOn: turn = %d, unitId = %d, y = %d, x = %d\n", turn, unit->id, y, x);
           node->rockon = true;
           unit->resourceY = y;
           unit->resourceX = x;
@@ -1319,10 +1330,14 @@ class Codevs{
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[(*it)];
-        int dist = calcManhattanDist(unit->y, unit->x, y, x);
 
-        // 他に最短距離なユニットがいる場合はfalseを返す
-        if(minDist > dist && unit->resourceY == UNDEFINED && unit->resourceX == UNDEFINED) return false;
+        if(unit->movable && unit->mode == SEARCH){
+          int dist = calcManhattanDist(unit->y, unit->x, y, x);
+
+          // 他に最短距離なユニットがいる場合はfalseを返す
+          if(minDist > dist) return false;
+          //if(minDist > dist && unit->resourceY == UNDEFINED && unit->resourceX == UNDEFINED) return false;
+        }
 
         it++;
       }
@@ -1449,6 +1464,9 @@ class Codevs{
             case PICKING:
               return calcPickingEvaluation(unit, operation);
               break;
+            case STAY:
+              return calcKingEvaluation(unit, operation);
+              break;
             default:
               break;
           }
@@ -1515,23 +1533,20 @@ class Codevs{
       int destDist = calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
       Node *node = &gameStage.field[unit->y][unit->x];
       int stamp = gameStage.field[unit->y][unit->x].stamp;
-      int baseDist = (gameStage.killedCount > 0 || isGrun())? 70 : 60;
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && gameStage.baseCount == 0 && (calcManhattanDist(unit->y, unit->x, 99, 99) <= baseDist || myResourceCount >= 1000)){
-        return 10000000;
+      }else if(operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && (myResourceCount >= 1000)){
+        return -10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return -10000;
-        }else if(turn <= 20){
+        }else if(turn <= 100){
           if(gameStage.openedNodeCount == 0){
-            return 100 * myResourceCount - 10 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+            return 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }else{
-            return 100 * myResourceCount + 4 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+            return 100 * myResourceCount + 10 * gameStage.openedNodeCount - 3 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }
-        }else if(turn <= 95){
-          return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost + 3 * aroundMyUnitDist(unit) - max(0, calcReceivedCombatDamage(unit)-300)/10;
         }else{
           if(unit->type != WORKER){
             if(gameStage.gameSituation == ONRUSH){
@@ -1558,6 +1573,16 @@ class Codevs{
       }
     }
 
+    int calcKingEvaluation(Unit *king, int operation){
+      if(operation == CREATE_BASE){
+        return 100;
+      }else if(operation == NO_MOVE){
+        return 10;
+      }else{
+        return 0;
+      }
+    }
+
     /*
      * PICKING状態での評価値
      * 資源マスにいない状態では資源マスを目指すように
@@ -1566,6 +1591,7 @@ class Codevs{
       Node *node = &gameStage.field[unit->y][unit->x];
       int dist = calcManhattanDist(unit->y, unit->x, 50, 50);
 
+      // 資源マスの上にいる場合
       if(node->resource && unit->resourceY == unit->y && unit->resourceX == unit->x){
         //fprintf(stderr,"Base Count = %d\n", node->myUnitCount[BASE]);
         if(gameStage.gameSituation == WARNING && operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
@@ -1586,8 +1612,11 @@ class Codevs{
           unit->destX = gameStage.targetX;
           return -10000;
         }else{
+          int diffY   = abs(unit->y - unit->resourceY);
+          int diffX   = abs(unit->x - unit->resourceX);
+          int diffAll = abs(diffY - diffX);
           assert(unit->resourceY >= 0 && unit->resourceX >= 0);
-          return -calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX);
+          return -4 * calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX) - 2 * diffAll;
         }
       }
     }
@@ -1620,8 +1649,14 @@ class Codevs{
      * 城が動いていない時の評価値
      */
     int calcNoneCastelEvaluation(Unit *castel, int operation){
+      Node *node = getNode(castel->y, castel->x);
+
       // 序盤でどれだけワーカーの数を増やすか
-      if(operation == CREATE_WORKER && turn <= 8){
+      if(operation == CREATE_WORKER && turn <= 16){
+        return 100;
+      }else if(operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
+        return 200;
+      }else if(operation == CREATE_WORKER && myResourceCount >= 400 && node->myUnitCount[WORKER] == 1){
         return 100;
       }else{
         return 0;
@@ -2872,6 +2907,7 @@ class Codevs{
      * 1P側のプレイヤかどうかの確認
      */
     bool isFirstPlayer(){
+      assert(myCastelCoordY >= 0 && myCastelCoordX >= 0);
       return (calcManhattanDist(0, 0, myCastelCoordY, myCastelCoordX) <= 40);
     }
 
