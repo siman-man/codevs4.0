@@ -186,13 +186,17 @@ struct Node{
   bool nodamage;            // ダメージを受けていない
   bool enemyCastel;         // 敵の城がある可能性
   int stamp;                // 足跡
+  int myK;                  // このマスから攻撃範囲(2)にいる自軍の数
+  int enemyK;               // このマスから攻撃範囲(2)にいる敵軍の数
   int cost;                 // ノードのコスト
   int markCount;            // マークカウント(自軍が行動する予定のマス)
   int seenCount;            // ノードを監視しているユニットの数 
   int troopsId;             // 滞在中の軍隊ID
+  int myUnitTotalCount;     // 自軍の総数
   int myUnitCount[7];       // 自軍の各ユニット数
+  int enemyUnitTotalCount;  // 敵軍の総数
   int enemyUnitCount[7];    // 相手の各ユニット数
-  int enemyAttackCount[7];  // 敵の攻撃の数
+  int enemyAttackCount[7];  // 敵軍の攻撃の数
   int timestamp;            // タイムスタンプ
   set<int> seenMembers;     // ノードを監視している自軍のメンバー
   set<int> myUnits;         // 自軍のIDリスト
@@ -541,8 +545,11 @@ class Codevs{
         fprintf(stderr,"myCastelY = %d, myCastelX = %d\n", y, x);
       }
 
-      gameStage.field[y][x].myUnitCount[unitType] += 1;
-      gameStage.field[y][x].myUnits.insert(unitId);
+      Node *node = getNode(y,x);
+
+      node->myUnitTotalCount += 1;
+      node->myUnitCount[unitType] += 1;
+      node->myUnits.insert(unitId);
 
       unitList[unitId] = unit;
       unitList[unitId].mode = directFirstMode(&unitList[unitId]);
@@ -634,6 +641,7 @@ class Codevs{
       }
 
       node->enemyUnitCount[unitType] += 1;
+      node->enemyUnitTotalCount += 1;
       node->enemyUnits.insert(unitId);
       unitList[unitId] = unit;
       enemyActiveUnitList.insert(unitId);
@@ -655,6 +663,24 @@ class Codevs{
     bool isOccupied(int y, int x){
       Node *node = getNode(y, x);
       return (node->enemyUnitCount[WORKER] >= 4);
+    }
+
+    /*
+     * 各マス毎の攻撃範囲にいる敵ユニットの数を更新
+     */
+    void updateEnemyKcount(){
+      set<int>::iterator it = enemyActiveUnitList.begin();
+
+      while(it != enemyActiveUnitList.end()){
+        Unit *enemy = &unitList[*it];
+
+        int dist = calcManhattanDist(enemy->y, enemy->x, myCastelCoordY, myCastelCoordX);
+        if(dist <= DANGER_LINE){
+          gameStage.gameSituation = DANGER;
+        }
+
+        it++;
+      }
     }
 
     /*
@@ -886,49 +912,6 @@ class Codevs{
     };
 
     /*
-     * 未知領域の計算
-     * 指定した座標の未知数を計算
-     */
-    int calcUnknownPoint(int ypos, int xpos){
-      int point = calcManhattanDist(ypos, xpos, 0, 0);
-
-      map<int, bool> checkList;
-      queue<cell> que;
-      que.push(cell(Coord(ypos,xpos),0));
-
-      while(!que.empty()){
-        cell c = que.front(); que.pop(); 
-        Coord coord = c.first;
-        int dist = c.second;
-
-        if(isWall(coord.y, coord.x)){
-          point -= 100;
-          continue;
-        }
-        if(checkList[coord.y*WIDTH+coord.x] || dist >= 5) continue;
-        checkList[coord.y*WIDTH+coord.x] = true;
-
-        Node *node = &gameStage.field[coord.y][coord.x];
-
-        //point += (gameStage.field[coord.y][coord.x].searched)? -10 : 1000; 
-        if(!node->searched){
-          point += gameStage.field[coord.y][coord.x].cost;
-        }
-
-        //point -= 4 * gameStage.field[coord.y][coord.x].markCount;
-
-        for(int i = 1; i < 5; i++){
-          int ny = coord.y + dy[i];
-          int nx = coord.x + dx[i];
-
-          que.push(cell(Coord(ny, nx), dist+1));
-        }
-      }
-
-      return point;
-    }
-
-    /*
      * ノードの作成を行う
      */
     Node createNode(){
@@ -993,7 +976,7 @@ class Codevs{
         if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        Node *node = &gameStage.field[coord.y][coord.x];
+        Node *node = getNode(coord.y, coord.x);
         node->timestamp = turn;
 
         for(int i = 1; i < 5; i++){
@@ -1028,6 +1011,7 @@ class Codevs{
         checkNoEnemyCastel(y,x);
       }
 
+      node->myUnitTotalCount += 1;
       node->myUnitCount[unit->type] += 1;
       node->myUnits.insert(unitId);
     }
@@ -1049,6 +1033,7 @@ class Codevs{
       Node *node = getNode(y, x);
 
       node->enemyUnits.insert(unitId);
+      node->enemyUnitTotalCount += 1;
       node->enemyUnitCount[unit->type] += 1;
     }
 
@@ -1370,7 +1355,7 @@ class Codevs{
 
     /*
      * 自軍の生存確認
-     * ユニットのtimestampが更新されていない場合は前のターンで的に倒されたので、
+     * ユニットのtimestampが更新されていない場合は前のターンで敵に倒されたので、
      * リストから排除する。
      */
     void myUnitSurvivalCheck(){
@@ -1383,7 +1368,7 @@ class Codevs{
         if(unit->timestamp != turn){
           removeMyUnit(unit);
         }else{
-          updateNodeTimestamp(unit->y, unit->x);
+          updateNodeTimestamp(unit->y, unit->x, unit->eyeRange);
         }
 
         it++;
@@ -2207,7 +2192,8 @@ class Codevs{
         it++;
       }
 
-      return currentHp <= enemy->hp * 0.9;
+      return currentHp <= 0;
+      //return currentHp <= enemy->hp * 0.9;
     }
 
     /*
@@ -2285,8 +2271,7 @@ class Codevs{
 
         Node *node = &gameStage.field[coord.y][coord.x];
 
-        int cnt = node->myUnits.size();
-        unitCount += min(10, cnt);
+        unitCount += min(10, node->myUnitTotalCount);
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -2319,8 +2304,7 @@ class Codevs{
 
         Node *node = &gameStage.field[coord.y][coord.x];
 
-        int cnt = node->enemyUnits.size();
-        unitCount += min(10, cnt);
+        unitCount += min(10, node->enemyUnitTotalCount);
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -2351,7 +2335,6 @@ class Codevs{
         checkList[coord.y*WIDTH+coord.x] = true;
 
         gameStage.field[coord.y][coord.x].markCount += 1;
-        //gameStage.field[coord.y][coord.x].cost -= 1;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -2434,9 +2417,12 @@ class Codevs{
             node->markCount = 0;
           }
           node->seenMembers.clear();
+          node->myUnitTotalCount = 0;
           node->myUnits.clear();
+          node->enemyUnitTotalCount = 0;
           node->enemyUnits.clear();
           node->opened = false;
+
           if(turn % 1 == 0){
             node->stamp = 0;
           }
@@ -3786,11 +3772,11 @@ class CodevsTest{
     cv.updateGameSituation();
     if(gameStage.gameSituation != OPENING) return false;
 
-    cv.addEnemyUnit(100, 10, 10, 2000, WORKER);
+    cv.addEnemyUnit(100, 30, 30, 2000, WORKER);
     cv.updateGameSituation();
     if(gameStage.gameSituation != WARNING) return false;
 
-    cv.createDummyUnit(0, 0, 0, 50000, CASTEL);
+    cv.createDummyEnemyUnit(0, 0, 0, 50000, CASTEL);
     cv.updateGameSituation();
     if(gameStage.gameSituation != DANGER) return false;
 
@@ -4272,6 +4258,15 @@ class CodevsTest{
 
     if(coord1.y != 99 || coord1.x != 99) return false;
     if(coord2.y != 89 || coord2.x != 89) return false;
+
+    return true;
+  }
+
+  /*
+   *  kの値が更新できているかどうか
+   */
+  bool testCase51(){
+    cv.stageInitialize();
 
     return true;
   }
