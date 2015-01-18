@@ -82,6 +82,8 @@ const int dx[5] = {0, 0, 0,-1, 1};
 const int UNDEFINED = -1;     // 未定
 const int REAL = true;        // 確定コマンド
 const int DANGER_LINE = 40;   // 敵との距離での危険値
+const int MY = 0;             // 自軍ID
+const int ENEMY = 1;          // 敵軍ID
 bool firstPlayer = false;     // 1P側かどうか
 int ATTACK_NUM = 40;          // 突撃を仕掛ける人数
 int attackCount = 0;          // 突撃した回数
@@ -270,6 +272,7 @@ struct Coord{
 };
 
 typedef pair<Coord, int> cell;
+typedef pair<int, int> kCount;
 
 int remainingTime;            // 残り時間
 int stageNumber;              // 現在のステージ数
@@ -668,19 +671,50 @@ class Codevs{
     /*
      * 各マス毎の攻撃範囲にいる敵ユニットの数を更新
      */
-    void updateEnemyKcount(){
-      set<int>::iterator it = enemyActiveUnitList.begin();
+    void updateKCount(){
+      kCount kCnt;
 
-      while(it != enemyActiveUnitList.end()){
-        Unit *enemy = &unitList[*it];
+      for(int y = 0; y < HEIGHT; y++){
+        for(int x = 0; x < WIDTH; x++){
+          Node *node = getNode(y,x);
+          kCnt = calcKcount(y,x);
 
-        int dist = calcManhattanDist(enemy->y, enemy->x, myCastelCoordY, myCastelCoordX);
-        if(dist <= DANGER_LINE){
-          gameStage.gameSituation = DANGER;
+          node->myK = kCnt.first;
+          node->enemyK = kCnt.second;
         }
-
-        it++;
       }
+    }
+
+    /*
+     * Kの値を計算する
+     */
+    kCount calcKcount(int y, int x, int range = 2){
+      map<int, bool> checkList;
+      int myK = 0;
+      int enemyK = 0;
+      queue<cell> que;
+      que.push(cell(Coord(y, x), 0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = getNode(coord.y, coord.x);
+        myK += node->myUnitTotalCount;
+        enemyK += node->enemyUnitTotalCount;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), range+1));
+        }
+      }
+
+      return kCount(myK, enemyK);
     }
 
     /*
@@ -909,6 +943,8 @@ class Codevs{
           }
         }
       }
+
+      return Coord(UNDEFINED, UNDEFINED);
     };
 
     /*
@@ -919,18 +955,22 @@ class Codevs{
       memset(node.myUnitCount, 0, sizeof(node.myUnitCount));
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       memset(node.enemyAttackCount, 0, sizeof(node.enemyAttackCount));
-      node.seenCount = 0;
-      node.cost = 0;
-      node.stamp = 0;
-      node.markCount = 0;
-      node.timestamp = 0;
-      node.troopsId = UNDEFINED;
-      node.resource = false;
-      node.opened = false;
-      node.rockon = false;
-      node.searched = false;
-      node.nodamage = false;
-      node.enemyCastel = true;
+      node.seenCount            = 0;
+      node.cost                 = 0;
+      node.stamp                = 0;
+      node.myK                  = 0;
+      node.enemyK               = 0;
+      node.myUnitTotalCount     = 0;
+      node.enemyUnitTotalCount  = 0;
+      node.markCount            = 0;
+      node.timestamp            = 0;
+      node.troopsId             = UNDEFINED;
+      node.resource             = false;
+      node.opened               = false;
+      node.rockon               = false;
+      node.searched             = false;
+      node.nodamage             = false;
+      node.enemyCastel          = true;
 
       return node;
     }
@@ -3108,6 +3148,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase48:\t%s\n", testCase48()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase49:\t%s\n", testCase49()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase50:\t%s\n", testCase50()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase51:\t%s\n", testCase51()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3366,8 +3407,12 @@ class CodevsTest{
     if(node.enemyUnitCount[FIGHTER] != 0) return false;
     if(node.enemyUnitCount[BASE] != 0) return false;
     if(node.seenMembers.size() != 0) return false;
+    if(node.myUnitTotalCount != 0) return false;
+    if(node.enemyUnitTotalCount != 0) return false;
     if(node.timestamp != 0) return false;
     if(node.seenCount != 0) return false;
+    if(node.myK != 0) return false;
+    if(node.enemyK != 0) return false;
     if(node.cost != 0) return false;
     if(node.stamp != 0) return false;
     if(node.markCount != 0) return false;
@@ -4263,10 +4308,18 @@ class CodevsTest{
   }
 
   /*
-   *  kの値が更新できているかどうか
+   *  敵のkの値が更新できているかどうか
    */
   bool testCase51(){
     cv.stageInitialize();
+
+    cv.createDummyEnemyUnit(0, 10, 10, 5000, ASSASIN);
+    Node *node = cv.getNode(10, 10);
+
+    cv.updateKCount();
+
+    fprintf(stderr,"enemyK = %d\n", node->enemyK);
+    if(node->enemyK != 1) return 0;
 
     return true;
   }
