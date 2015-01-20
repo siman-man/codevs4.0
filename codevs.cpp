@@ -85,9 +85,8 @@ const int DANGER_LINE = 40;   // 敵との距離での危険値
 const int MY = 0;             // 自軍ID
 const int ENEMY = 1;          // 敵軍ID
 bool firstPlayer = false;     // 1P側かどうか
-int ATTACK_NUM = 40;          // 突撃を仕掛ける人数
 int attackCount = 0;          // 突撃した回数
-int createLimit = 35;         // 生産に関係する制限
+int createLimit = 40;         // 生産に関係する制限
 
 // 各ユニットへの命令
 const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
@@ -181,16 +180,17 @@ struct MovePriority{
 
 // フィールドの1マスに対応する
 struct Node{
-  bool resource;            // 資源マスかどうか
-  bool opened;              // 調査予定マス
-  bool searched;            // 既に調査済みかどうか
-  bool rockon;              // ノードを狙っている自軍がいるかどうか
-  bool nodamage;            // ダメージを受けていない
-  bool enemyCastel;         // 敵の城がある可能性
-  int stamp;                // 足跡
-  int myK;                  // このマスから攻撃範囲(2)にいる自軍の数
-  int enemyK;               // このマスから攻撃範囲(2)にいる敵軍の数
-  int cost;                 // ノードのコスト
+  bool resource;                        // 資源マスかどうか
+  bool opened;                          // 調査予定マス
+  bool searched;                        // 既に調査済みかどうか
+  bool rockon;                          // ノードを狙っている自軍がいるかどうか
+  bool nodamage;                        // ダメージを受けていない
+  bool enemyCastel;                     // 敵の城がある可能性
+  bool occupy;                          // 占領されているかどうかの確認
+  int stamp;                            // 足跡
+  int myK;                              // このマスから攻撃範囲(2)にいる自軍の数
+  int enemyK;                           // このマスから攻撃範囲(2)にいる敵軍の数
+  int cost;                             // ノードのコスト
   int markCount;                        // マークカウント(自軍が行動する予定のマス)
   int seenCount;                        // ノードを監視しているユニットの数 
   int troopsId;                         // 滞在中の軍隊ID
@@ -200,6 +200,8 @@ struct Node{
   int enemyUnitCount[7];                // 相手の各ユニット数
   int enemyAttackCount[7];              // 敵軍の攻撃の数
   int enemyCountWithinAttackRange[7];   // 攻撃範囲内にいる敵の種類
+  int attackDamage[7];                  // 与えることの出来る攻撃力
+  int receiveDamage[7];                 // 受けるダメージ
   int timestamp;                        // タイムスタンプ
   set<int> seenMembers;                 // ノードを監視している自軍のメンバー
   set<int> myUnits;                     // 自軍のIDリスト
@@ -275,25 +277,26 @@ struct Coord{
 typedef pair<Coord, int> cell;
 typedef pair<int, int> kCount;
 
-int remainingTime;            // 残り時間
-int stageNumber;              // 現在のステージ数
-int currentStageNumber;       // 現在のステージ数
-int turn;                     // 現在のターン
-int totalTurn;                // ターンの合計値
-int myAllUnitCount;           // 自軍のユニット数
-int enemyAllUnitCount;        // 敵軍のユニット数
-int resourceCount;            // 資源の数
-int myResourceCount;          // 自軍の資源の数
-int myCastelCoordY;           // 自軍の城のy座標
-int myCastelCoordX;           // 自軍の城のx座標
-int enemyCastelCoordY;        // 敵軍の城のy座標
-int enemyCastelCoordX;        // 敵軍の城のx座標
-int hitPointY;                // 敵の城の攻撃を受けた座標
-int hitPointX;                // 敵の城の攻撃を受けた座標
-Unit unitList[MAX_UNIT_ID];   // ユニットのリスト
-set<int> myActiveUnitList;    // 生存している自軍のユニットのIDリスト
-set<int> enemyActiveUnitList; // 生存している敵軍のユニットのIDリスト
-set<int> resourceNodeList;    // 資源マスのリスト
+int remainingTime;              // 残り時間
+int stageNumber;                // 現在のステージ数
+int currentStageNumber;         // 現在のステージ数
+int turn;                       // 現在のターン
+int totalTurn;                  // ターンの合計値
+int myAllUnitCount;             // 自軍のユニット数
+int enemyAllUnitCount;          // 敵軍のユニット数
+int resourceCount;              // 資源の数
+int myResourceCount;            // 自軍の資源の数
+int myCastelCoordY;             // 自軍の城のy座標
+int myCastelCoordX;             // 自軍の城のx座標
+int enemyCastelCoordY;          // 敵軍の城のy座標
+int enemyCastelCoordX;          // 敵軍の城のx座標
+int hitPointY;                  // 敵の城の攻撃を受けた座標
+int hitPointX;                  // 敵の城の攻撃を受けた座標
+Unit unitList[MAX_UNIT_ID];     // ユニットのリスト
+set<int> myActiveUnitList;      // 生存している自軍のユニットのIDリスト
+set<int> enemyActiveUnitList;   // 生存している敵軍のユニットのIDリスト
+set<int> resourceNodeList;      // 資源マスのリスト
+set<int> enemyResourceNodeList; // 敵の資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
 Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
@@ -668,7 +671,28 @@ class Codevs{
      */
     bool isOccupied(int y, int x){
       Node *node = getNode(y, x);
-      return (node->enemyUnitCount[WORKER] >= 4);
+      return (node->resource && (node->enemyUnitCount[WORKER] >= 4 || node->enemyUnitCount[VILLAGE] > 0 || node->enemyUnitCount[BASE]));
+    }
+
+    /*
+     * 資源マスの情報について更新
+     */
+    bool updateResourceNodeData(){
+      set<int>::iterator it = resourceNodeList.begin();
+
+      while(it != resourceNodeList.end()){
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+        Node *node = getNode(y,x);
+
+        if(isOccupied(y,x)){
+          enemyResourceNodeList.insert(y*WIDTH+x);
+        }else{
+          enemyResourceNodeList.erase(y*WIDTH+x);
+        }
+
+        it++;
+      }
     }
 
     /*
@@ -679,47 +703,24 @@ class Codevs{
         for(int x = 0; x < WIDTH; x++){
           Node *node = getNode(y,x);
 
-          updateEnemyCountWithinAttackRange(y,x);
+          updateNodeData(y,x);
+
+          if(node->enemyK > 0 && node->myK > 0){
+            for(int i = 0; i < 4; i++){
+              for(int j = 0; j < UNIT_MAX; j++){
+                node->attackDamage[i] += node->enemyCountWithinAttackRange[j] * (DAMAGE_TABLE[i][j] / node->enemyK);
+                node->receiveDamage[i] += node->enemyCountWithinAttackRange[j] * (DAMAGE_TABLE[j][i] / node->myK);
+              }
+            }
+          }
         }
       }
     }
-
-    /*
-     * Kの値を計算する
-    kCount calcKcount(int y, int x, int range = 2){
-      map<int, bool> checkList;
-      int myK = 0;
-      int enemyK = 0;
-      queue<cell> que;
-      que.push(cell(Coord(y, x), 0));
-
-      while(!que.empty()){
-        cell c = que.front(); que.pop(); 
-        Coord coord = c.first;
-        int dist = c.second;
-
-        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
-        checkList[coord.y*WIDTH+coord.x] = true;
-
-        Node *node = getNode(coord.y, coord.x);
-        myK += node->myUnitTotalCount;
-        enemyK += node->enemyUnitTotalCount;
-
-        for(int i = 1; i < 5; i++){
-          int ny = coord.y + dy[i];
-          int nx = coord.x + dx[i];
-          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), range+1));
-        }
-      }
-
-      return kCount(myK, enemyK);
-    }
-     */
 
     /*
      * 攻撃範囲にいる敵の数とKの値を更新
      */
-    void updateEnemyCountWithinAttackRange(int y, int x, int range = 2){
+    void updateNodeData(int y, int x, int range = 2){
       Node *originNode = getNode(y,x);
 
       map<int, bool> checkList;
@@ -989,6 +990,8 @@ class Codevs{
       memset(node.enemyUnitCount, 0, sizeof(node.enemyUnitCount));
       memset(node.enemyAttackCount, 0, sizeof(node.enemyAttackCount));
       memset(node.enemyCountWithinAttackRange, 0, sizeof(node.enemyCountWithinAttackRange));
+      memset(node.attackDamage, 0, sizeof(node.attackDamage));
+      memset(node.receiveDamage, 0, sizeof(node.receiveDamage));
       node.seenCount            = 0;
       node.cost                 = 0;
       node.stamp                = 0;
@@ -1004,6 +1007,7 @@ class Codevs{
       node.rockon               = false;
       node.searched             = false;
       node.nodamage             = false;
+      node.occupy               = false;
       node.enemyCastel          = true;
 
       return node;
@@ -1236,7 +1240,7 @@ class Codevs{
         case ASSASIN:
           switch(unit->role){
             case LEADER:
-              if(unit->troopsCount >= unit->troopsLimit){
+              if(unit->troopsCount >= unit->troopsLimit || gameStage.gameSituation == DANGER){
                 if(unit->townId != NULL){
                   unit->townId = NULL;
                   node->troopsId = UNDEFINED;
@@ -1318,7 +1322,7 @@ class Codevs{
 
       if(unit->type == ASSASIN || unit->type == FIGHTER){
         if(castelDist <= 10){
-          fprintf(stderr,"turn = %d: Create GUARDIAN\n", turn);
+          //fprintf(stderr,"turn = %d: Create GUARDIAN\n", turn);
           return GUARDIAN;
         }else if(!existLeader(unit->y, unit->x)){
           node->troopsId = unit->id;
@@ -1327,9 +1331,9 @@ class Codevs{
 
           if(attackCount == 0){
             if(isGrun()){
-              unit->troopsLimit = 20;
+              unit->troopsLimit = 40;
             }else{
-              unit->troopsLimit = 10;
+              unit->troopsLimit = 40;
             }
           }else{
             unit->troopsLimit = 1;
@@ -1564,7 +1568,7 @@ class Codevs{
         case CASTEL:
           switch(unit->mode){
             case NONE:
-              return calcNoneCastelEvaluation(unit, operation);
+              return calcCastelEvaluation(unit, operation);
               break;
           }
         case BASE:
@@ -1669,7 +1673,7 @@ class Codevs{
     int calcKingEvaluation(Unit *king, int operation){
       Node *node = getNode(myCastelCoordY, myCastelCoordX);
 
-      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1){
+      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && gameStage.gameSituation == DANGER){
         return 100;
       }else if(operation == NO_MOVE){
         return 10;
@@ -1741,16 +1745,14 @@ class Codevs{
     }
 
     /*
-     * 城が動いていない時の評価値
+     * 城の評価値
      */
-    int calcNoneCastelEvaluation(Unit *castel, int operation){
+    int calcCastelEvaluation(Unit *castel, int operation){
       Node *node = getNode(castel->y, castel->x);
 
       // 序盤でどれだけワーカーの数を増やすか
       if(operation == CREATE_WORKER && turn <= 16){
         return 100;
-      }else if(operation == CREATE_BASE && node->myUnitCount[BASE] == 1){
-        return 200;
       }else if(operation == CREATE_WORKER && myResourceCount >= 400 && node->myUnitCount[WORKER] == 1){
         return 100;
       }else{
@@ -1812,10 +1814,11 @@ class Codevs{
      */
     int calcGuardianEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      int killCount = canKillEnemyCount(unit->y, unit->x, unit->attackRange);
-      int enemyCount = aroundEnemyCount(unit->y, unit->x, 4);
+      //int killCount = canKillEnemyCount(unit->y, unit->x, unit->attackRange);
+      //int enemyCount = aroundEnemyCount(unit->y, unit->x, 4);
+      // 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
 
-      return killCount + enemyCount;
+      return node->attackDamage[unit->type] - 0.5 * node->receiveDamage[unit->type];
     }
 
     /*
@@ -2484,7 +2487,7 @@ class Codevs{
     void clearField(){
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
-          Node *node = &gameStage.field[y][x];
+          Node *node = getNode(y,x);
 
           node->seenCount = 0;
           if(turn % 10 == 0){
@@ -2496,6 +2499,8 @@ class Codevs{
           node->enemyUnitTotalCount = 0;
           node->enemyUnits.clear();
           node->opened = false;
+          node->myK = 0;
+          node->enemyK = 0;
 
           if(turn % 1 == 0){
             node->stamp = 0;
@@ -2504,6 +2509,9 @@ class Codevs{
           memset(node->myUnitCount, 0, sizeof(node->myUnitCount));
           memset(node->enemyUnitCount, 0, sizeof(node->enemyUnitCount));
           memset(node->enemyAttackCount, 0, sizeof(node->enemyAttackCount));
+          memset(node->enemyCountWithinAttackRange, 0, sizeof(node->enemyCountWithinAttackRange));
+          memset(node->attackDamage, 0, sizeof(node->attackDamage));
+          memset(node->receiveDamage, 0, sizeof(node->receiveDamage));
         }
       }
     }
@@ -2537,6 +2545,9 @@ class Codevs{
 
         // 敵軍の生存確認
         enemyUnitSurvivalCheck();
+
+        // 資源マス情報の更新
+        updateResourceNodeData();
 
         // 戦闘情報の更新
         updateBattleData();
@@ -3187,6 +3198,9 @@ class CodevsTest{
     fprintf(stderr, "TestCase50:\t%s\n", testCase50()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase51:\t%s\n", testCase51()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase52:\t%s\n", testCase52()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase53:\t%s\n", testCase53()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase54:\t%s\n", testCase54()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase55:\t%s\n", testCase55()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -4265,8 +4279,17 @@ class CodevsTest{
     for(int i = 0; i < 5; i++){
       cv.addEnemyUnit(i, 50, 50, 2000, WORKER);
     }
-
     if(!cv.isOccupied(50, 50)) return false;
+
+    cv.addResourceNode(10, 10);
+    cv.createDummyEnemyUnit(5, 10, 10, 20000, VILLAGE);
+
+    if(!cv.isOccupied(10,10)) return false;
+
+    cv.addResourceNode(20,20);
+    cv.createDummyEnemyUnit(6, 20, 20, 20000, BASE);
+
+    if(!cv.isOccupied(20,20)) return false;
 
     return true;
   }
@@ -4354,6 +4377,9 @@ class CodevsTest{
     cv.createDummyEnemyUnit(1, 10, 11, 5000, KNIGHT);
     cv.createDummyEnemyUnit(2, 11, 10, 5000, FIGHTER);
     cv.createDummyEnemyUnit(3, 11, 11, 5000, ASSASIN);
+
+    cv.createDummyUnit(4, 9, 8, 2000, WORKER);
+
     Node *node = cv.getNode(10, 10);
     Node *node1 = cv.getNode(9, 10);
 
@@ -4362,6 +4388,7 @@ class CodevsTest{
     if(node->enemyK != 4) return false;
     if(node1->enemyK != 3) return false;
     if(node->myK != 0) return false;
+    if(node1->myK != 1) return false;
 
     return true;
   }
@@ -4387,6 +4414,72 @@ class CodevsTest{
     if(node1->enemyCountWithinAttackRange[KNIGHT] != 2) return false;
     if(node2->enemyCountWithinAttackRange[KNIGHT] != 2) return false;
     if(node2->enemyCountWithinAttackRange[ASSASIN] != 0) return false;
+
+    return true;
+  }
+
+  /*
+   * 与えるダメージの計算が出来ている
+   */
+  bool testCase53(){
+    cv.stageInitialize();
+
+    cv.createDummyEnemyUnit(0, 10, 10, 2000, WORKER);
+    cv.createDummyEnemyUnit(1, 10, 11, 5000, KNIGHT);
+    cv.createDummyEnemyUnit(2, 11, 10, 5000, FIGHTER);
+    cv.createDummyEnemyUnit(3, 11, 11, 5000, ASSASIN);
+    cv.createDummyEnemyUnit(4, 10, 9, 5000, KNIGHT);
+
+    cv.createDummyUnit(5, 10, 8, 5000, ASSASIN);
+
+    Node *node1 = cv.getNode(10, 10);
+
+    cv.updateBattleData();
+
+    if(node1->attackDamage[ASSASIN] != 700) return false;
+
+    return true;
+  }
+
+  /*
+   * 受けるダメージの計算が出来ている
+   */
+  bool testCase54(){
+    cv.stageInitialize();
+
+    cv.createDummyEnemyUnit(0, 10, 10, 2000, WORKER);
+    cv.createDummyEnemyUnit(1, 10, 11, 5000, KNIGHT);
+    cv.createDummyEnemyUnit(2, 11, 10, 5000, FIGHTER);
+    cv.createDummyEnemyUnit(3, 11, 11, 5000, ASSASIN);
+    cv.createDummyUnit(4, 10, 10, 5000, ASSASIN);
+    cv.createDummyUnit(5, 8, 8, 5000, ASSASIN);
+
+    Node *node1 = cv.getNode(10, 10);
+    Node *node2 = cv.getNode(9, 9);
+
+    cv.updateBattleData();
+
+    if(node1->receiveDamage[ASSASIN] != 1000) return false;
+    if(node2->receiveDamage[ASSASIN] != 50) return false;
+
+    return true;
+  }
+
+  /*
+   * 敵が占領している資源マスのリストが手に入る
+   */
+  bool testCase55(){
+    cv.stageInitialize();
+
+    cv.addResourceNode(10, 10);
+
+    for(int i = 0; i < 5; i++){
+      cv.createDummyEnemyUnit(i, 10, 10, 2000, WORKER);
+    }
+
+    cv.updateResourceNodeData();
+
+    if(enemyResourceNodeList.size() != 1) return false;
 
     return true;
   }
