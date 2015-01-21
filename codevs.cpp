@@ -612,6 +612,10 @@ class Codevs{
       myActiveUnitList.erase(unit->id);
       uncheckNode(unit->y, unit->x, unit->type, unit->eyeRange);
       gameStage.killedCount += 1;
+
+      if(unit->type == BASE){
+        gameStage.baseCount -= 1;
+      }
     } 
 
     /*
@@ -1122,6 +1126,7 @@ class Codevs{
       if(gameStage.gameSituation != ONRUSH){
         updateUnknownPoint();
       }
+      int aroundCastelUnitCount = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 1);
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
@@ -1139,6 +1144,9 @@ class Codevs{
             coord = directTargetPoint(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
             unit->destY = coord.y;
             unit->destX = coord.x;
+          }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+            unit->destY = enemyCastelCoordY;
+            unit->destX = enemyCastelCoordX;
           }else{
             unit->destY = gameStage.targetY;
             unit->destX = gameStage.targetX;
@@ -1147,6 +1155,8 @@ class Codevs{
           checkMark(unit->destY, unit->destX);
 
           assert(unit->destY >= 0 && unit->destX >= 0);
+        }else if(unit->role == GUARDIAN && aroundCastelUnitCount >= 30 && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+          unit->mode = DESTROY;
         }
 
         it++;
@@ -1239,7 +1249,8 @@ class Codevs{
         case ASSASIN:
           switch(unit->role){
             case LEADER:
-              if(unit->troopsCount >= unit->troopsLimit || gameStage.gameSituation == DANGER){
+              if(unit->troopsCount >= unit->troopsLimit){
+              //if(unit->troopsCount >= unit->troopsLimit || gameStage.gameSituation == DANGER){
                 if(unit->townId != NULL){
                   unit->townId = NULL;
                   node->troopsId = UNDEFINED;
@@ -1330,9 +1341,9 @@ class Codevs{
 
           if(attackCount == 0){
             if(isGrun()){
-              unit->troopsLimit = 40;
+              unit->troopsLimit = 30;
             }else{
-              unit->troopsLimit = 40;
+              unit->troopsLimit = 30;
             }
           }else{
             unit->troopsLimit = 1;
@@ -1632,7 +1643,7 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(situation != DANGER && operation == CREATE_BASE && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && (rightDownDist <= 70 || myResourceCount >= 1000)){
+      }else if(situation != DANGER && operation == CREATE_BASE && gameStage.baseCount == 0 && isSafePoint(unit->y, unit->x, unit->eyeRange/2) && calcNearWallDistance(unit->y,unit->x) >= 10 && (rightDownDist <= 70 || (rightDownDist <= 80 && myResourceCount >= 1000))){
         return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
@@ -1661,6 +1672,8 @@ class Codevs{
               return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10;
             }else if(operation == CREATE_VILLAGE && unit->y == hitPointY && unit->x == hitPointX && node->myUnitCount[VILLAGE] <= 1){
               return 900000000;
+            }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
+              return MIN_VALUE;
             }else{
               return 50 * myResourceCount + 2 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10 + 10 * topLeftDist;
             }
@@ -1672,7 +1685,7 @@ class Codevs{
     int calcKingEvaluation(Unit *king, int operation){
       Node *node = getNode(myCastelCoordY, myCastelCoordX);
 
-      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && gameStage.gameSituation == DANGER){
+      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && gameStage.gameSituation == DANGER){
         return 100;
       }else if(operation == NO_MOVE){
         return 10;
@@ -1686,7 +1699,7 @@ class Codevs{
      * 資源マスにいない状態では資源マスを目指すように
      */
     int calcPickingEvaluation(Unit *unit, int operation){
-      Node *node = &gameStage.field[unit->y][unit->x];
+      Node *node = getNode(unit->y, unit->x);
       int dist = calcManhattanDist(unit->y, unit->x, 50, 50);
 
       // 資源マスの上にいる場合
@@ -1697,9 +1710,9 @@ class Codevs{
         }else if(operation == CREATE_BASE && dist <= 80 && myResourceCount >= 1000 && node->myUnitCount[BASE] == 1){
           return -1000;
         }else if(operation == CREATE_VILLAGE && gameStage.incomeResource < createLimit && node->myUnitCount[VILLAGE] == 1){
-          return 100;
+          return 1000;
         }else{
-          return 10 * node->myUnitCount[WORKER];
+          return myResourceCount + 10 * node->myUnitCount[WORKER];
         }
       }else{
         if(isDie(unit, unit->y, unit->x)){
@@ -1752,7 +1765,7 @@ class Codevs{
       // 序盤でどれだけワーカーの数を増やすか
       if(operation == CREATE_WORKER && turn <= 16){
         return 100;
-      }else if(operation == CREATE_WORKER && myResourceCount >= 400 && node->myUnitCount[WORKER] == 1){
+      }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
         return 100;
       }else{
         return 0;
@@ -1764,6 +1777,8 @@ class Codevs{
      */
     int calcBaseEvaluation(Unit *base, int operation){
       if(myResourceCount <= 100 && operation != NO_MOVE) return -100;
+      int myUnitCount = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 10);
+      int enemyUnitCount = aroundEnemyUnitCount(myCastelCoordY, myCastelCoordX, 10);
 
       if(operation == CREATE_ASSASIN){
         return 100;
@@ -1771,7 +1786,7 @@ class Codevs{
         return 20;
       }else if(operation == CREATE_KNIGHT && base->createKnightCount < 5){
         return -150;
-      }else if(gameStage.gameSituation == DANGER && operation == NO_MOVE){
+      }else if(gameStage.gameSituation == DANGER && enemyUnitCount > 0 && myUnitCount < enemyUnitCount+10 && operation == NO_MOVE){
         return 200;
       }else{
         return 0;
@@ -1782,7 +1797,10 @@ class Codevs{
      * 作戦指令本部の評価値
      */
     int calcGhqEvaluation(Unit *ghq, int operation){
-      if(operation == CREATE_ASSASIN){
+      int myUnitCount = aroundMyUnitCount(ghq->y, ghq->x, 10);
+      int enemyUnitCount = aroundEnemyUnitCount(ghq->y, ghq->x, 10);
+
+      if((myUnitCount < enemyUnitCount+50 || myResourceCount >= 1000) && operation == CREATE_ASSASIN){
         return 100;
       }else{
         return 0;
@@ -1836,10 +1854,10 @@ class Codevs{
 
       if(node->myUnitTotalCount > 10){
         return MIN_VALUE;
-      }else if(castelDist > 10){
+      }else if(castelDist > 10 || unit->mode == DESTROY){
         return (10000 - destDist);
       }else if(node->myUnitTotalCount > 10){
-        return -100000 - castelDist;
+        return 100000 - castelDist;
       }else{
         return node->attackDamage[unit->type] - node->receiveDamage[unit->type] - castelDist;
       }
@@ -1866,9 +1884,12 @@ class Codevs{
           break;
         case DESTROY:
           if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
-            int aroundCastelEnemyCount = aroundEnemyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 1);
+            int aroundCastelEnemyCount = aroundEnemyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 2);
+            int aroundCastelMyCount = aroundMyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 2);
+            int myUnitCount = aroundMyUnitCount(unit->y, unit->x, 2);
 
             if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 30){
+            //if(node->enemyAttackCount[ASSASIN] >= 15){
               int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 12;
               if(operation == NO_MOVE){
                 return 100 - abs(diff-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
@@ -1877,7 +1898,7 @@ class Codevs{
               }
             }else{
               int dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
-              int diff = (aroundCastelEnemyCount+min(12, dist/2)+5 <= 20 || dist <= 10)? 0 : 12;
+              int diff = (aroundCastelEnemyCount+min(12, dist/2)+20 <= myUnitCount || dist <= 10 || aroundCastelEnemyCount < aroundCastelMyCount)? 0 : 12;
               int diffY = abs(unit->y - enemyCastelCoordY);
               int diffX = abs(unit->x - enemyCastelCoordX);
               int diffAll = abs(diffY - diffX);
@@ -2009,8 +2030,8 @@ class Codevs{
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = getNode(coord.y, coord.x);
-        enemyCount += node->enemyUnitTotalCount;
-        //enemyCount += node->enemyUnitCount[ASSASIN] + node->enemyUnitCount[FIGHTER];
+        //enemyCount += node->enemyUnitTotalCount;
+        enemyCount += node->enemyUnitCount[ASSASIN] + node->enemyUnitCount[FIGHTER];
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
