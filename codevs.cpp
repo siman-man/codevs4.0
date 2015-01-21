@@ -1653,7 +1653,7 @@ class Codevs{
           }else{
             if(gameStage.gameSituation == ONRUSH){
               assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
-              int aroundCastelEnemyCount = aroundEnemyCount(enemyCastelCoordY, enemyCastelCoordX, 1);
+              int aroundCastelEnemyCount = aroundEnemyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 1);
               int dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
               int diff = (aroundCastelEnemyCount+min(12, dist/2)+5 <= 20 || dist <= 10)? 0 : 12;
               destDist = abs(diff-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
@@ -1792,20 +1792,35 @@ class Codevs{
     /*
      * 周りの見方の数を数える
      */
-    int aroundUnitCount(int ypos, int xpos){
-      int unitCount = 0;
+    int aroundMyUnitCount(int ypos, int xpos, int range){
+      int myUnitCount = 0;
 
-      for(int i = 0; i < 5; i++){
-        int ny = ypos + dy[i];
-        int nx = xpos + dx[i];
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), 0));
 
-        if(!isWall(ny,nx)){
-          Node *node = getNode(ny,nx);
-          unitCount += node->myUnitCount[ASSASIN] + node->myUnitCount[FIGHTER];
+      while(!que.empty()){
+        cell c = que.front(); que.pop();
+
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = getNode(coord.y, coord.x);
+        myUnitCount += node->myUnitTotalCount;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny,nx), dist+1));
         }
       }
 
-      return unitCount;
+
+      return myUnitCount;
     }
 
     /*
@@ -1816,13 +1831,15 @@ class Codevs{
       int destDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
       //int killCount = canKillEnemyCount(unit->y, unit->x, unit->attackRange);
-      //int enemyCount = aroundEnemyCount(unit->y, unit->x, 4);
+      //int enemyCount = aroundEnemyUnitCount(unit->y, unit->x, 4);
       // 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
 
       if(node->myUnitTotalCount > 10){
         return MIN_VALUE;
       }else if(castelDist > 10){
         return (10000 - destDist);
+      }else if(node->myUnitTotalCount > 10){
+        return -100000 - castelDist;
       }else{
         return node->attackDamage[unit->type] - node->receiveDamage[unit->type] - castelDist;
       }
@@ -1833,7 +1850,7 @@ class Codevs{
      */
     int calcLeaderEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      int unitCount = aroundUnitCount(unit->y, unit->x);
+      int unitCount = aroundMyUnitCount(unit->y, unit->x, 1);
       int stamp = gameStage.field[unit->y][unit->x].stamp;
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0);
       int targetDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
@@ -1849,7 +1866,7 @@ class Codevs{
           break;
         case DESTROY:
           if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
-            int aroundCastelEnemyCount = aroundEnemyCount(enemyCastelCoordY, enemyCastelCoordX, 1);
+            int aroundCastelEnemyCount = aroundEnemyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 1);
 
             if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 30){
               int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 12;
@@ -1975,7 +1992,7 @@ class Codevs{
     /*
      * 周囲の敵の数を数える
      */
-    int aroundEnemyCount(int ypos, int xpos, int range){
+    int aroundEnemyUnitCount(int ypos, int xpos, int range){
       int enemyCount = 0;
 
       map<int, bool> checkList;
@@ -1992,7 +2009,8 @@ class Codevs{
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = getNode(coord.y, coord.x);
-        enemyCount += node->enemyUnitCount[ASSASIN] + node->enemyUnitCount[FIGHTER];
+        enemyCount += node->enemyUnitTotalCount;
+        //enemyCount += node->enemyUnitCount[ASSASIN] + node->enemyUnitCount[FIGHTER];
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
@@ -2895,7 +2913,10 @@ class Codevs{
      */
     void moveUnitCount(int y, int x, int direct, int unitType){
       gameStage.field[y][x].myUnitCount[unitType] -= 1;
+      gameStage.field[y][x].myUnitTotalCount -= 1;
+
       gameStage.field[y+dy[direct]][x+dx[direct]].myUnitCount[unitType] += 1;
+      gameStage.field[y+dy[direct]][x+dx[direct]].myUnitTotalCount += 1;
     }
 
     /*
@@ -3194,6 +3215,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase53:\t%s\n", testCase53()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase54:\t%s\n", testCase54()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase55:\t%s\n", testCase55()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase56:\t%s\n", testCase56()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -4473,6 +4495,40 @@ class CodevsTest{
     cv.updateResourceNodeData();
 
     if(enemyResourceNodeList.size() != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * 周りの敵の数を数えることが出来る。
+   */
+  bool testCase56(){
+    cv.stageInitialize();
+
+    cv.createDummyEnemyUnit(0, 10, 10, 2000, WORKER);
+
+    if(cv.aroundEnemyUnitCount(10, 10, 1) != 1) return false;
+
+    cv.createDummyEnemyUnit(1, 11, 11, 2000, WORKER);
+    if(cv.aroundEnemyUnitCount(10, 10, 2) != 2) return false;
+    if(cv.aroundEnemyUnitCount(10, 10, 1) != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * 周りの自軍の数を数えることが出来る。
+   */
+  bool testCase57(){
+    cv.stageInitialize();
+
+    cv.createDummyUnit(0, 10, 10, 2000, WORKER);
+
+    if(cv.aroundMyUnitCount(10, 10, 1) != 1) return false;
+
+    cv.createDummyUnit(1, 11, 11, 2000, WORKER);
+    if(cv.aroundMyUnitCount(10, 10, 2) != 2) return false;
+    if(cv.aroundMyUnitCount(10, 10, 1) != 1) return false;
 
     return true;
   }
