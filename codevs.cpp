@@ -187,6 +187,7 @@ struct Node{
   bool nodamage;                        // ダメージを受けていない
   bool enemyCastel;                     // 敵の城がある可能性
   bool occupy;                          // 占領されているかどうかの確認
+  int rockCount;                        // このノードを狙っているユニットの数
   int stamp;                            // 足跡
   int myK;                              // このマスから攻撃範囲(2)にいる自軍の数
   int enemyK;                           // このマスから攻撃範囲(2)にいる敵軍の数
@@ -299,7 +300,6 @@ set<int> resourceNodeList;      // 資源マスのリスト
 set<int> enemyResourceNodeList; // 敵の資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
-Node tempField[HEIGHT][WIDTH];    // 一時的なゲームフィールド
 map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
 
 GameStage gameStage;      // ゲームフィールド
@@ -672,10 +672,13 @@ class Codevs{
 
     /*
      * 資源マスが占領されているかどうかを調べる
+     *   - Workerが1体以上
+     *   - 村が1つ以上
+     * いずれかを満たす場合は占領されていると判断
      */
     bool isOccupied(int y, int x){
       Node *node = getNode(y, x);
-      return (node->resource && (node->enemyUnitCount[WORKER] >= 4 || node->enemyUnitCount[VILLAGE] > 0 || node->enemyUnitCount[BASE]));
+      return (node->resource && (node->enemyUnitCount[WORKER] > 0 || node->enemyUnitCount[VILLAGE] > 0));
     }
 
     /*
@@ -697,6 +700,37 @@ class Codevs{
 
         it++;
       }
+    }
+
+    /*
+     * 敵が占領している資源マスで近い場所を調べる
+     *   y: y座標
+     *   x: x座標
+     */
+    Coord searchEnemyOccupiedResourceNode(int ypos, int xpos){
+      Coord coord;
+      int minDist = MAX_VALUE;
+      int dist;
+
+      set<int>::iterator it = enemyResourceNodeList.begin();
+
+      while(it != enemyResourceNodeList.end()){
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+        Node *node = getNode(y,x);
+
+        dist = calcManhattanDist(ypos, xpos, y, x);
+
+        if(minDist > dist){
+          minDist = dist;
+          coord.y = y;
+          coord.x = x;
+        }
+
+        it++;
+      }
+
+      return coord;
     }
 
     /*
@@ -1001,6 +1035,7 @@ class Codevs{
       node.myK                  = 0;
       node.enemyK               = 0;
       node.myUnitTotalCount     = 0;
+      node.rockCount            = 0;
       node.enemyUnitTotalCount  = 0;
       node.markCount            = 0;
       node.timestamp            = 0;
@@ -1122,17 +1157,32 @@ class Codevs{
      * ユニットのモードの状態の更新を行う
      */
     void updateUnitMode(){
+      int aroundMyCastelUnitCount = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 1);
       set<int>::iterator it = myActiveUnitList.begin();
-      if(gameStage.gameSituation != ONRUSH){
-        updateUnknownPoint();
-      }
-      int aroundCastelUnitCount = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 1);
 
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
         unit->mode = directUnitMode(unit);
 
-        //fprintf(stderr,"turn = %d, unitId = %d mode = %d, update\n", turn, unit->id, unit->mode);
+        if(unit->role == GUARDIAN && aroundMyCastelUnitCount >= 30 && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+          unit->mode = DESTROY;
+        }
+
+        it++;
+      }
+    }
+
+    /*
+     * 各ユニットの目的地を決める
+     */
+    void updateUnitDestination(){
+      if(gameStage.gameSituation != ONRUSH){
+        updateUnknownPoint();
+      }
+      set<int>::iterator it = myActiveUnitList.begin();
+
+      while(it != myActiveUnitList.end()){
+        Unit *unit = &unitList[*it];
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
         if((unit->mode == SEARCH) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
@@ -1155,8 +1205,6 @@ class Codevs{
           checkMark(unit->destY, unit->destX);
 
           assert(unit->destY >= 0 && unit->destX >= 0);
-        }else if(unit->role == GUARDIAN && aroundCastelUnitCount >= 30 && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
-          unit->mode = DESTROY;
         }
 
         it++;
@@ -1164,7 +1212,16 @@ class Codevs{
     }
 
     /*
-     * ユニットのモードを更新する
+     * 資源マス破壊ユニットの目的地更新
+     */
+    void updateVillageBreakerDestination(Unit *breaker){
+      if(breaker->destY == UNDEFINED && breaker->destX == UNDEFINED){
+      }else{
+      }
+    }
+
+    /*
+     * ユニットのモードを決める
      */
     int directUnitMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
@@ -2610,6 +2667,9 @@ class Codevs{
         // 自軍の各ユニットのモード変更を行う
         updateUnitMode();
 
+        // 自軍の各ユニットの目的地の更新を行う
+        updateUnitDestination();
+
         vector<Operation> operationList;
         // 行動フェーズ
         operationList = actionPhase();
@@ -3237,6 +3297,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase54:\t%s\n", testCase54()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase55:\t%s\n", testCase55()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase56:\t%s\n", testCase56()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase57:\t%s\n", testCase57()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -3497,6 +3558,7 @@ class CodevsTest{
     if(node.seenMembers.size() != 0) return false;
     if(node.myUnitTotalCount != 0) return false;
     if(node.enemyUnitTotalCount != 0) return false;
+    if(node.rockCount != 0) return false;
     if(node.timestamp != 0) return false;
     if(node.seenCount != 0) return false;
     if(node.myK != 0) return false;
@@ -4325,7 +4387,7 @@ class CodevsTest{
     cv.addResourceNode(20,20);
     cv.createDummyEnemyUnit(6, 20, 20, 20000, BASE);
 
-    if(!cv.isOccupied(20,20)) return false;
+    //if(!cv.isOccupied(20,20)) return false;
 
     return true;
   }
@@ -4526,11 +4588,11 @@ class CodevsTest{
   bool testCase56(){
     cv.stageInitialize();
 
-    cv.createDummyEnemyUnit(0, 10, 10, 2000, WORKER);
+    cv.createDummyEnemyUnit(0, 10, 10, 2000, ASSASIN);
 
     if(cv.aroundEnemyUnitCount(10, 10, 1) != 1) return false;
 
-    cv.createDummyEnemyUnit(1, 11, 11, 2000, WORKER);
+    cv.createDummyEnemyUnit(1, 11, 11, 2000, ASSASIN);
     if(cv.aroundEnemyUnitCount(10, 10, 2) != 2) return false;
     if(cv.aroundEnemyUnitCount(10, 10, 1) != 1) return false;
 
@@ -4552,6 +4614,13 @@ class CodevsTest{
     if(cv.aroundMyUnitCount(10, 10, 1) != 1) return false;
 
     return true;
+  }
+
+  /*
+   * 敵の資源マスで一番近い場所を返せる
+   */
+  bool testCase58(){
+    cv.stageInitialize();
   }
 };
 
