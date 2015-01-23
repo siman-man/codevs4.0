@@ -589,7 +589,7 @@ class Codevs{
 
       while(it != myActiveUnitList.end()){
         Unit *other = &unitList[*it];
-        assert(other->y >= 0 && other->x >= 0);
+        assert(unit->y >= 0 && unit->x >= 0 && other->y >= 0 && other->x >= 0);
         dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
 
         if(other->role == LEADER && minDist > dist){
@@ -704,8 +704,8 @@ class Codevs{
 
     /*
      * 敵が占領している資源マスで近い場所を調べる
-     *   y: y座標
-     *   x: x座標
+     *   ypos: y座標
+     *   xpos: x座標
      */
     Coord searchEnemyOccupiedResourceNode(int ypos, int xpos){
       Coord coord;
@@ -719,6 +719,7 @@ class Codevs{
         int x = (*it)%WIDTH;
         Node *node = getNode(y,x);
 
+        assert(ypos >= 0 && xpos >= 0 && y >= 0 && x >= 0);
         dist = calcManhattanDist(ypos, xpos, y, x);
 
         if(minDist > dist){
@@ -1008,7 +1009,7 @@ class Codevs{
           int nx = cell.x + dx[i];
 
           if(!isWall(ny,nx)){
-            assert(targetY >= 0 && targetX >= 0);
+            assert(ny >= 0 && nx >= 0 && targetY >= 0 && targetX >= 0);
             int nc = calcManhattanDist(ny, nx, targetY, targetX) + node->stamp + node->cost;
             que.push(Cell(ny, nx, cell.cost + nc));
           }
@@ -1179,6 +1180,7 @@ class Codevs{
       if(gameStage.gameSituation != ONRUSH){
         updateUnknownPoint();
       }
+
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
@@ -1186,25 +1188,12 @@ class Codevs{
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
         if((unit->mode == SEARCH) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
-          if(gameStage.gameSituation == ONRUSH){
-            unit->destY = enemyCastelCoordY;
-            unit->destX = enemyCastelCoordX;
-          }else if(gameStage.gameSituation == OPENING){
-            Coord coord;
-            coord = directTargetPoint(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
-            unit->destY = coord.y;
-            unit->destX = coord.x;
-          }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
-            unit->destY = enemyCastelCoordY;
-            unit->destX = enemyCastelCoordX;
-          }else{
-            unit->destY = gameStage.targetY;
-            unit->destX = gameStage.targetX;
-          }
+          updateSeacherDestination(unit);
 
           checkMark(unit->destY, unit->destX);
-
           assert(unit->destY >= 0 && unit->destX >= 0);
+        }else if(unit->role == VILLAGE_BREAKER){
+          updateVillageBreakerDestination(unit);
         }
 
         it++;
@@ -1212,11 +1201,42 @@ class Codevs{
     }
 
     /*
+     * 探索部隊の目的地を更新する
+     */
+    void updateSeacherDestination(Unit *seacher){
+      if(gameStage.gameSituation == ONRUSH){
+        seacher->destY = enemyCastelCoordY;
+        seacher->destX = enemyCastelCoordX;
+      }else if(gameStage.gameSituation == OPENING){
+        Coord coord = directTargetPoint(seacher->y, seacher->x, gameStage.targetY, gameStage.targetX);
+        seacher->destY = coord.y;
+        seacher->destX = coord.x;
+      }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+        seacher->destY = enemyCastelCoordY;
+        seacher->destX = enemyCastelCoordX;
+      }else{
+        seacher->destY = gameStage.targetY;
+        seacher->destX = gameStage.targetX;
+      }
+    }
+
+    /*
      * 資源マス破壊ユニットの目的地更新
      */
     void updateVillageBreakerDestination(Unit *breaker){
-      if(breaker->destY == UNDEFINED && breaker->destX == UNDEFINED){
+      Coord coord = searchEnemyOccupiedResourceNode(breaker->y, breaker->x);
+
+      // 目的地が決まっていない場合は新しく設定
+      if(breaker->destY == UNDEFINED && breaker->destX == UNDEFINED && coord.y != UNDEFINED && coord.x != UNDEFINED){
+        breaker->destY = coord.y;
+        breaker->destX = coord.x;
+      // 目的地が占領されていない場合は新しい目的地を決める
+      }else if(!isOccupied(breaker->destY, breaker->destX) && isSafePoint(breaker->destY, breaker->destX, 4) && coord.y != UNDEFINED && coord.x != UNDEFINED){
+        breaker->destY = coord.y;
+        breaker->destX = coord.x;
       }else{
+        breaker->destY = gameStage.targetY;
+        breaker->destX = gameStage.targetX;
       }
     }
 
@@ -1226,17 +1246,13 @@ class Codevs{
     int directUnitMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
       updateTroopsLimit(unit);
-      assert(myCastelCoordY >= 0 && myCastelCoordX >= 0);
+      assert(unit->y >= 0 && unit->x >= 0 && myCastelCoordY >= 0 && myCastelCoordX >= 0);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
 
       switch(unit->type){
         case WORKER:
           if(unit->mode == PICKING || pickModeCheck(unit)){
-            //if(false && node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
-            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && unit->birthday <= 12){
             if(node->resource && node->myUnitCount[VILLAGE] >= 1 && castelDist >= 20 && unit->birthday <= 20){
-            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
-            //if(node->resource && node->myUnitCount[VILLAGE] >= 1 && myResourceCount >= 40 && node->myUnitCount[WORKER] >= 5 && unit->birthday <= 12){
               return SEARCH;
             }else{
               return PICKING;
@@ -1355,6 +1371,7 @@ class Codevs{
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = &unitList[*it];
 
+        assert(enemy->y >= 0 && enemy->x >= 0 && myCastelCoordY >= 0 && myCastelCoordX >= 0);
         int dist = calcManhattanDist(enemy->y, enemy->x, myCastelCoordY, myCastelCoordX);
         if(dist <= DANGER_LINE){
           gameStage.gameSituation = DANGER;
@@ -1385,11 +1402,12 @@ class Codevs{
      */
     int directUnitRole(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
+      assert(unit->y >= 0 && unit->x >= 0 && myCastelCoordY >= 0 && myCastelCoordX >= 0);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
 
       if(unit->type == ASSASIN || unit->type == FIGHTER){
+        // 城の周りに生成された戦闘部隊は守護者
         if(castelDist <= 10){
-          //fprintf(stderr,"turn = %d: Create GUARDIAN\n", turn);
           return GUARDIAN;
         }else if(!existLeader(unit->y, unit->x)){
           node->troopsId = unit->id;
@@ -1409,10 +1427,13 @@ class Codevs{
 
           return LEADER;
         }else{
+          return VILLAGE_BREAKER;
           return COMBATANT;
         }
+      // ワーカで試合終盤で城に生成されたユニットは王様とする
       }else if(unit->type == WORKER && unit->y == myCastelCoordY && unit->x == myCastelCoordX && turn > 50){
         return KING;
+      // 城の上に立てられた拠点は、作戦本部とする
       }else if(unit->type == BASE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
         return GHQ;
       }else{
@@ -1442,7 +1463,7 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      //return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90);
+      assert(unit->y >= 0 && unit->x >= 0);
       return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
     }
 
@@ -1664,6 +1685,8 @@ class Codevs{
             return calcLeaderEvaluation(unit, operation);
           }else if(unit->role == GUARDIAN){
             return calcGuardianEvaluation(unit, operation);
+          }else if(unit->role == VILLAGE_BREAKER){
+            return calcVillageBreakerEvaluation(unit, operation);
           }else{
             return calcCombatEvaluation(unit, operation);
           }
@@ -1673,6 +1696,8 @@ class Codevs{
             return calcLeaderEvaluation(unit, operation);
           }else if(unit->role == GUARDIAN){
             return calcGuardianEvaluation(unit, operation);
+          }else if(unit->role == VILLAGE_BREAKER){
+            return calcVillageBreakerEvaluation(unit, operation);
           }else if(unit->mode == SEARCH){
             return calcSeacherEvaluation(unit, operation);
           }else{
@@ -1899,15 +1924,24 @@ class Codevs{
     }
 
     /*
+     * 村破壊モードの評価
+     */
+    int calcVillageBreakerEvaluation(Unit *breaker, int operation){
+      Node *node = getNode(breaker->y, breaker->x);
+      assert(breaker->destY >= 0 && breaker->destX >= 0);
+      int destDist = calcManhattanDist(breaker->y, breaker->x, breaker->destY, breaker->destX);
+
+      return (100 - destDist);
+    }
+
+    /*
      * 守護者時の行動パターン
      */
     int calcGuardianEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
+      assert(gameStage.targetY >= 0 && gameStage.targetX >= 0);
       int destDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
-      //int killCount = canKillEnemyCount(unit->y, unit->x, unit->attackRange);
-      //int enemyCount = aroundEnemyUnitCount(unit->y, unit->x, 4);
-      // 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
 
       if(node->myUnitTotalCount > 10){
         return MIN_VALUE;
@@ -1946,7 +1980,6 @@ class Codevs{
             int myUnitCount = aroundMyUnitCount(unit->y, unit->x, 2);
 
             if(node->enemyAttackCount[KNIGHT] + node->enemyAttackCount[FIGHTER] + node->enemyAttackCount[ASSASIN] >= 30){
-            //if(node->enemyAttackCount[ASSASIN] >= 15){
               int diff = (aroundCastelEnemyCount <= unitCount)? 2 : 12;
               if(operation == NO_MOVE){
                 return 100 - abs(diff-calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX));
@@ -1997,7 +2030,7 @@ class Codevs{
      */
     int calcCombatEvaluation(Unit *unit, int operation){
       Unit *leader = &unitList[unit->leaderId];
-      Node *node = &gameStage.field[unit->y][unit->x];
+      Node *node = getNode(unit->y, unit->x);
       int limit = (leader->y == enemyCastelCoordY && leader->x == enemyCastelCoordX)? 10 : 10;
 
       switch(unit->mode){
