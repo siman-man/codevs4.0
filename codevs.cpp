@@ -345,6 +345,7 @@ class Codevs{
     void init(){
       currentStageNumber = -1;
       totalTurn = 0;
+      firstPlayer = false;
 
       manhattanDistInitialize();
       reverseCoordTableInitialize();
@@ -442,6 +443,9 @@ class Codevs{
       // 調査予定のノード数の初期化
       gameStage.openedNodeCount = 0;
 
+      // 2P側と仮定する
+      firstPlayer = false;
+
       // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
@@ -469,6 +473,7 @@ class Codevs{
       int x;        // x座標
       int hp;       // HP
       int unitType; // ユニットの種類
+      Coord coord;  // 変換後の座標
       string str;   // 終端文字列「END」を格納するだけの変数
 
       // 調査予定のノード数をリセット
@@ -493,7 +498,7 @@ class Codevs{
       // 現在のターン数(0-index)
       scanf("%d", &turn);
 
-      if(currentStageNumber == 23 && turn % 10 == 0){
+      if(currentStageNumber == 41 && turn % 10 == 0){
         fprintf(stderr,"totalTurn = %d\n", totalTurn + turn);
       }
 
@@ -507,15 +512,23 @@ class Codevs{
       for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
+        // 自軍の城の座標を更新
+        if(unitType == CASTEL){
+          myCastelCoordY = y;
+          myCastelCoordX = x;
+        }
+
+        firstPlayer = isFirstPlayer();
+        coord = reverseCoord(y,x);
+
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          addMyUnit(unitId, y, x, hp, unitType);
+          addMyUnit(unitId, coord.y, coord.x, hp, unitType);
         }else{
-          updateMyUnitStatus(unitId, y, x, hp);
+          updateMyUnitStatus(unitId, coord.y, coord.x, hp);
         }
       }
 
-      firstPlayer = firstPlayer || isFirstPlayer();
 
       // 視野内の敵軍のユニット数
       scanf("%d", &enemyAllUnitCount);
@@ -523,12 +536,14 @@ class Codevs{
       // 敵軍ユニットの詳細
       for(int i = 0; i < enemyAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
+
+        coord = reverseCoord(y,x);
         
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
-          addEnemyUnit(unitId, y, x, hp, unitType);
+          addEnemyUnit(unitId, coord.y, coord.x, hp, unitType);
         }else{
-          updateEnemyUnitStatus(unitId, y, x, hp);
+          updateEnemyUnitStatus(unitId, coord.y, coord.x, hp);
         }
       }
 
@@ -538,7 +553,8 @@ class Codevs{
       // 資源マスの詳細
       for(int i = 0; i < resourceCount; i++){
         scanf("%d %d", &y, &x);
-        addResourceNode(y,x);
+        coord = reverseCoord(y,x);
+        addResourceNode(coord.y,coord.x);
       }
 
       // 終端文字列
@@ -596,6 +612,7 @@ class Codevs{
       unitIdCheckList[unitId] = true;
       checkNode(unitId, y, x, unit.eyeRange);
 
+      // 戦闘員の場合は、近くにいるリーダを探す
       if(unitList[unitId].role == COMBATANT){
         searchLeader(&unitList[unitId]);
       }
@@ -1025,21 +1042,20 @@ class Codevs{
      */
     void updateUnknownPoint(){
       Coord bestCoord;
+      Node *node = getNode(gameStage.targetY, gameStage.targetX);
 
-      if(!gameStage.castelAttack && !gameStage.field[gameStage.targetY][gameStage.targetX].searched){
-        //fprintf(stderr,"turn = %d, Not Yet Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
+      // 未開の地がまだ未探索の場合はそのまま帰す
+      if(!gameStage.castelAttack && !node->searched){
         return;
       }else if(!gameStage.castelAttack && gameStage.targetX < 90 && gameStage.targetY < 90 && gameStage.targetY + 10 < 99 && gameStage.targetX + 10 < 99){
         gameStage.targetY += 10;
         gameStage.targetX += 10;
-        //fprintf(stderr,"Next Target Point Searched +10: y = %d, x = %d\n", gameStage.targetY, gameStage.targetX);
         return;
       }else if(gameStage.castelAttack && gameStage.enemyCastelPointList.size() > 0){
         Node *node = &gameStage.field[gameStage.targetY][gameStage.targetX];
 
         if(node->searched || !node->enemyCastel){
           gameStage.enemyCastelPointList.pop();
-          //fprintf(stderr,"turn = %d, Next Target Point Searched: y = %d, x = %d\n", turn, gameStage.targetY, gameStage.targetX);
         }else{
           return;
         }
@@ -1051,7 +1067,6 @@ class Codevs{
         gameStage.targetY = y;
         gameStage.targetX = x;
 
-        //fprintf(stderr,"Next Target Point: y = %d, x = %d\n", y, x);
         return;
       }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
         gameStage.targetY = enemyCastelCoordY;
@@ -1075,7 +1090,6 @@ class Codevs{
 
           assert(coord.y >= 0 && coord.x >= 0);
           if(node->enemyCastel && calcManhattanDist(coord.y, coord.x, 99, 99) <= 40){
-            //fprintf(stderr,"Next point: y = %d, x = %d\n", coord.y, coord.x);
             gameStage.targetY = coord.y;
             gameStage.targetX = coord.x;
             return;
@@ -1481,8 +1495,6 @@ class Codevs{
       int aroundCastelEnemyUnitCount  = aroundEnemyUnitCount(myCastelCoordY, myCastelCoordX, 10).totalCount;
       int aroundCastelMyUnitCount     = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 10).totalCount;
 
-      fprintf(stderr,"BaseCount = %d, castelEnemyCount = %d, castelMyCount = %d\n", castel->myUnitCount[BASE], aroundCastelEnemyUnitCount, aroundCastelMyUnitCount);
-
       if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
         gameStage.gameSituation = ONRUSH;
       }else if(gameStage.gameSituation != WARNING && enemyActiveUnitList.size() == 0){
@@ -1560,7 +1572,6 @@ class Codevs{
           }
           attackCount += 1;
 
-          fprintf(stderr,"turn %d: direct leader => %d\n", turn, unit->id);
           return LEADER;
         }else{
           return COMBATANT;
@@ -1999,8 +2010,11 @@ class Codevs{
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
             }else{
-              //return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
-              return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - max(0, calcReceivedCombatDamage(unit)-300)/10 + 10 * topLeftDist;
+              if(isGrun()){
+                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
+              }else{
+                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
+              }
             }
           }
         }
@@ -2979,16 +2993,11 @@ class Codevs{
      */
     void finalOperation(vector<Operation> &operationList){
       int size = operationList.size();
-      if(gameStage.gameSituation != ONRUSH){
-        //fprintf(stderr,"finalOperation: size = %d\n", size);
-        //fprintf(stderr,"openedNodeCount = %d\n", gameStage.openedNodeCount);
-        //fprintf(stderr,"visibleNodeCount = %d\n", gameStage.visibleNodeCount);
-      }
 
       printf("%d\n", size);
       for(int i = 0; i < size; i++){
         Operation ope = operationList[i];
-        printf("%d %c\n", ope.unitId, instruction[ope.operation]);
+        printf("%d %c\n", ope.unitId, instruction[reverseOperation(ope.operation)]);
       }
     }
 
@@ -3436,13 +3445,37 @@ class Codevs{
     }
 
     /*
-     * 座標系を逆にする(0, 0)を(99, 99)に
+     * プレイヤーが2P側なら座標系を逆にする(99, 99)を(0, 0)に
      */
     Coord reverseCoord(int ypos, int xpos){
-      int ny = reverseCoordTable[ypos];
-      int nx = reverseCoordTable[xpos];
+      // 1P側ならそのまま返す
+      if(firstPlayer){
+        return Coord(ypos, xpos);
+      // 2P側なら逆にしたものを返す
+      }else{
+        return Coord(reverseCoordTable[ypos],reverseCoordTable[xpos]);
+      }
+    }
 
-      return Coord(ny,nx);
+    /*
+     * 操作命令を逆にする
+     */
+    int reverseOperation(int operation){
+      if(firstPlayer){
+        return operation;
+      }else{
+        if(operation == MOVE_UP){
+          return MOVE_DOWN;
+        }else if(operation == MOVE_DOWN){
+          return MOVE_UP;
+        }else if(operation == MOVE_RIGHT){
+          return MOVE_LEFT;
+        }else if(operation == MOVE_LEFT){
+          return MOVE_RIGHT;
+        }else{
+          return operation;
+        }
+      }
     }
 
     /*
@@ -3638,6 +3671,7 @@ class CodevsTest{
     fprintf(stderr, "TestCase56:\t%s\n", testCase56()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase57:\t%s\n", testCase57()? "SUCCESS!" : "FAILED!");
     fprintf(stderr, "TestCase58:\t%s\n", testCase58()? "SUCCESS!" : "FAILED!");
+    fprintf(stderr, "TestCase59:\t%s\n", testCase59()? "SUCCESS!" : "FAILED!");
   }
 
   /*
@@ -4796,11 +4830,16 @@ class CodevsTest{
   bool testCase50(){
     cv.stageInitialize();
 
+    firstPlayer = false;
     Coord coord1 = cv.reverseCoord(0,0);
     Coord coord2 = cv.reverseCoord(10,10);
+    Coord coord3 = cv.reverseCoord(99,99);
+    Coord coord4 = cv.reverseCoord(50,50);
 
     if(coord1.y != 99 || coord1.x != 99) return false;
     if(coord2.y != 89 || coord2.x != 89) return false;
+    if(coord3.y != 0 || coord3.y != 0) return false;
+    if(coord4.y != 49 || coord4.y != 49) return false;
 
     return true;
   }
@@ -4970,6 +5009,21 @@ class CodevsTest{
     int newLeaderId = cv.searchNextLeader(assasin1);
 
     if(newLeaderId != 1) return false;
+
+    return true;
+  }
+
+  /*
+   * 1P側か2P側かを判断できる
+   */
+  bool testCase59(){
+    cv.stageInitialize();
+
+    cv.createDummyUnit(0, 10, 10, 50000, CASTEL); 
+    if(!cv.isFirstPlayer()) return false;
+
+    cv.createDummyUnit(0, 90, 90, 50000, CASTEL); 
+    if(cv.isFirstPlayer()) return false;
 
     return true;
   }
