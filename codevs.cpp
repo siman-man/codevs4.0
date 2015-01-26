@@ -2122,7 +2122,7 @@ class Codevs{
       Node *node = getNode(castel->y, castel->x);
 
       // 序盤でどれだけワーカーの数を増やすか
-      if(operation == CREATE_WORKER && turn <= 28 && resourceNodeList.size() == 0){
+      if(operation == CREATE_WORKER && turn <= 28){
         return 100;
       }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
         return 100;
@@ -3529,7 +3529,7 @@ class Codevs{
 
           if(!node->resource){
             enemyAI = GRUN;
-            fprintf(stderr,"turn = %d, is Grun!\n", turn);
+            fprintf(stderr,"stage = %d, turn = %d, is Grun!\n", currentStageNumber, turn);
             return true;
           }
         }
@@ -3580,7 +3580,15 @@ class Codevs{
         int x = (*it)%WIDTH;
         Node *node = getNode(y,x);
 
-        if(node->enemyUnitCount[VILLAGE] == 1 && node->enemyUnitCount[BASE] == 1){
+        if(isOccupied(y,x)){
+          if(node->enemyUnitCount[VILLAGE] == 1 && node->enemyUnitCount[BASE] == 1){
+            fprintf(stderr,"stage = %d, turn = %d, is Chokudai!\n", currentStageNumber, turn);
+            enemyAI = CHOKUDAI;
+            return true;
+          }
+        }
+
+        if(node->myUnitCount[VILLAGE] == 1 && node->enemyUnitCount[VILLAGE] > 0){
           fprintf(stderr,"stage = %d, turn = %d, is Chokudai!\n", currentStageNumber, turn);
           enemyAI = CHOKUDAI;
           return true;
