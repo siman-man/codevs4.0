@@ -1898,8 +1898,6 @@ class Codevs{
       int rightDownDist = calcManhattanDist(unit->y, unit->x, 99, 99);
       int wallDist = calcNearWallDistance(unit->y, unit->x);
 
-      if(!isGrun() && myResourceCount >= 1300) return true;
-
       if(gameStage.gameSituation == DANGER) return false;
       if(gameStage.gameSituation != DANGER && gameStage.baseCount != 0) return false;
       if(isGrun()){
@@ -2425,10 +2423,10 @@ class Codevs{
         checkList[coord.y*WIDTH+coord.x] = true;
 
         Node *node = getNode(coord.y, coord.x);
-        enemyCount.totalCount += min(15, node->enemyUnitTotalCount);
-        enemyCount.knightCount += min(15, node->enemyUnitCount[KNIGHT]);
-        enemyCount.fighterCount += min(15, node->enemyUnitCount[FIGHTER]);
-        enemyCount.assasinCount += min(15, node->enemyUnitCount[ASSASIN]);
+        enemyCount.totalCount += node->enemyUnitTotalCount;
+        enemyCount.knightCount += node->enemyUnitCount[KNIGHT];
+        enemyCount.fighterCount += node->enemyUnitCount[FIGHTER];
+        enemyCount.assasinCount += node->enemyUnitCount[ASSASIN];
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
