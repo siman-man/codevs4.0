@@ -930,15 +930,20 @@ class Codevs{
      * 突撃する人数を変える
      */ 
     void updateTroopsLimit(Unit *unit){
-      if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+      // 城が見つかっている場合
+      if(isEnemyCastelDetected()){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
 
         if(!isLila() && node->enemyUnitCount[BASE] <= 0){
           unit->troopsLimit = min(unit->troopsLimit, 10);
-        }else if(isChokudai()){
-          unit->troopsLimit = min(unit->troopsLimit, 20);
         }else if(isLila() && attackCount <= 1){
           unit->troopsLimit = max(unit->troopsLimit, 30);
+        }
+      }else{
+        if(isChokudai()){
+          unit->troopsLimit = min(unit->troopsLimit, 20);
+        }else if(isGrun() && attackCount <= 1){
+          unit->troopsLimit = max(unit->troopsLimit, 50);
         }
       }
     }
@@ -1903,7 +1908,7 @@ class Codevs{
       if(isGrun()){
         if(!isSafePoint(unit->y, unit->x, 8, 1)) return false;
         if(wallDist > 15) return false;
-        if(rightDownDist > 60) return false;
+        if(rightDownDist > 40 && myResourceCount <= 2000) return false;
       }else{
         if(!isSafePoint(unit->y, unit->x, 2)) return false;
         if(wallDist < 10) return false;
@@ -2045,7 +2050,7 @@ class Codevs{
               return MIN_VALUE;
             }else{
               if(isGrun()){
-                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
+                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist;
               }else{
                 return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
               }
@@ -2162,7 +2167,7 @@ class Codevs{
 
       if(operation == CREATE_ASSASIN){
         return 100;
-      }else if(operation == CREATE_FIGHTER && myUnitCount.assasinCount >= 30){
+      }else if(operation == CREATE_FIGHTER && myResourceCount <= 300 && myUnitCount.assasinCount >= 30){
         return 150;
       }else if(operation == CREATE_FIGHTER && (!isLila() && attackCount > 1)){
         return 20;
@@ -2283,7 +2288,7 @@ class Codevs{
           }
           break;
         case DESTROY:
-          if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+          if(isEnemyCastelDetected()){
             Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
             Unit *enemyCastel = getUnit(enemyCastelUnitId);
             int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
@@ -2302,7 +2307,7 @@ class Codevs{
             int diffY = abs(unit->y - gameStage.targetY);
             int diffX = abs(unit->x - gameStage.targetX);
             int diffAll = abs(diffY - diffX);
-            return -5 * targetDist + calcManhattanDist(unit->y, unit->x, 0, 0) - stamp + killCount - 2 * diffAll - node->receiveDamage[unit->type]/10;
+            return -5 * targetDist + calcManhattanDist(unit->y, unit->x, 0, 0) - stamp + 2 * diffAll - node->receiveDamage[unit->type]/10;
           }else{
             int diffY = abs(unit->y - gameStage.targetY);
             int diffX = abs(unit->x - gameStage.targetX);
