@@ -285,6 +285,7 @@ struct GameStage{
   int killedCount;                      // 倒された味方の数
   int currentEnemyUnitCount[UNIT_MAX];  // 遭遇した敵の数
   int baseCount;                        // 拠点の数
+  int createVillageCount;               // このターンに立てた村の数
   bool castelAttack;                    // 城からの攻撃を受けている
   Node field[HEIGHT][WIDTH];            // ゲームフィールド
   queue<int> enemyCastelPointList;      // 敵の城の座標候補
@@ -490,6 +491,8 @@ class Codevs{
       // 確保できている視野のリセット
       gameStage.visibleNodeCount = 0;
 
+      // 立てた村の数をリセット
+      gameStage.createVillageCount = 0;
 
       // 現在のステージ数(0-index)
       scanf("%d", &stageNumber);
@@ -1606,7 +1609,7 @@ class Codevs{
           }
           attackCount += 1;
 
-          if(attackCount >= 10 && isChokudai()){
+          if(attackCount >= 15 && isChokudai()){
             gameStage.gameSituation = DANGER;
           }
           if(attackCount >= 20 && isLila()){
@@ -1668,9 +1671,10 @@ class Codevs{
         int x = (*it)%WIDTH;
         assert(unit->y >= 0 && unit->x >= 0 && y >= 0 && x >= 0);
         int dist = calcManhattanDist(unit->y, unit->x, y, x);
+        int rightBottomDist = calcManhattanDist(unit->y, unit->x, 99, 99);
         Node *node = getNode(y,x);
 
-        if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x)){
+        if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x) && rightBottomDist >= 100){
           //fprintf(stderr,"RockOn: turn = %d, unitId = %d, y = %d, x = %d\n", turn, unit->id, y, x);
           node->rockon = true;
           unit->resourceY = y;
@@ -1921,7 +1925,7 @@ class Codevs{
       if(isGrun()){
         if(!isSafePoint(unit->y, unit->x, 8, 1)) return false;
         if(wallDist > 15 && myResourceCount <= 1800) return false;
-        if(rightDownDist > 40 && myResourceCount <= 1800) return false;
+        if(rightDownDist > 40) return false;
       }else{
         if(!isSafePoint(unit->y, unit->x, 2)) return false;
         if(wallDist < 10 && myResourceCount <= 1800) return false;
@@ -2103,7 +2107,7 @@ class Codevs{
           return -10000;
         }else if(operation == CREATE_BASE && dist <= 80 && myResourceCount >= 1000 && node->myUnitCount[BASE] == 1){
           return -1000;
-        }else if(operation == CREATE_VILLAGE && gameStage.gameSituation != DANGER && isSafePoint(unit->y, unit->x, 4) && gameStage.incomeResource < createLimit && node->myUnitCount[VILLAGE] == 1){
+        }else if(operation == CREATE_VILLAGE && gameStage.createVillageCount == 0 && gameStage.gameSituation != DANGER && isSafePoint(unit->y, unit->x, 4) && gameStage.incomeResource < createLimit && node->myUnitCount[VILLAGE] == 1){
           return 1000;
         }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
           return MIN_VALUE;
@@ -2146,8 +2150,8 @@ class Codevs{
         return 110;
       }else if(operation == CREATE_WORKER && isSafePoint(village->y, village->x, 8) && isGrun() && node->resource && centerDist <= 70 && village->createWorkerCount <= 5 && isResourceFull()){
         return 110;
-      }else if(operation == CREATE_WORKER && isSilver() && myResourceCount >= 900){
-        return -2000;
+      }else if(operation == CREATE_WORKER && isSilver() && isDefended() && myResourceCount >= 200){
+        return 2000;
       }else if(operation != CREATE_WORKER){
         return 10;
       }else{
@@ -2175,7 +2179,7 @@ class Codevs{
      * 拠点の評価値
      */
     int calcBaseEvaluation(Unit *base, int operation){
-      if(myResourceCount <= 100 && operation != NO_MOVE && enemyCastelCoordY == UNDEFINED && enemyCastelCoordX == UNDEFINED) return -100;
+      if(myResourceCount <= 100 && operation != NO_MOVE && !isEnemyCastelDetected()) return -100;
       if(myResourceCount <= 100 && operation != NO_MOVE && isEnemyCastelDetected() && isLila() && !isEnemyCastelSpy()) return -100;
       UnitCount myUnitCount = aroundMyUnitCount(base->y, base->x, 10);
 
@@ -2190,8 +2194,8 @@ class Codevs{
           return 20;
         }else if(operation == CREATE_FIGHTER && isChokudai()){
           return 120;
-        }else if(operation == CREATE_KNIGHT && (isChokudai() && attackCount > 1)){
-          return 110;
+        }else if(operation == CREATE_KNIGHT && (isSilver() || isChokudai())){
+          return 130;
         }else if((enemyAI == SILVER || enemyAI == CHOKUDAI || enemyAI == LILA) && gameStage.gameSituation == DANGER && operation == NO_MOVE){
           return 200;
         }else{
@@ -2206,8 +2210,8 @@ class Codevs{
           return 20;
         }else if(operation == CREATE_FIGHTER && isChokudai()){
           return 120;
-        }else if(operation == CREATE_KNIGHT && (isChokudai() && attackCount > 1)){
-          return 110;
+        }else if(operation == CREATE_KNIGHT && (isSilver() || isChokudai())){
+          return 130;
         }else if(enemyAI == SILVER && gameStage.gameSituation == DANGER && operation == NO_MOVE){
           return 200;
         }else{
@@ -2220,6 +2224,8 @@ class Codevs{
      * 作戦指令本部の評価値
      */
     int calcGhqEvaluation(Unit *ghq, int operation){
+      if(myResourceCount <= 100 && operation != NO_MOVE && !isEnemyCastelDetected()) return -100;
+
       int myUnitCount = aroundMyUnitCount(ghq->y, ghq->x, 10).totalCount;
       int enemyUnitCount = aroundEnemyUnitCount(ghq->y, ghq->x, 10).totalCount;
       int bestUnit = checkAdvantageousUnit(ghq->y, ghq->x);
@@ -2341,7 +2347,7 @@ class Codevs{
               return -20 * abs(diff-enemyCastelDist) - 2 * wallDist - node->receiveDamage[unit->type]/10;
             }else if(isSilver()){
               if(enemyCastelDist > 10){
-                return -20 * abs(diff-enemyCastelDist) - 2 * wallDist - 100 * node->receiveDamage[unit->type];
+                return -20 * abs(diff-enemyCastelDist) - 2 * wallDist - node->receiveDamage[unit->type];
               }else{
                 return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - 2 * wallDist - node->receiveDamage[unit->type]/10;
               }
@@ -2674,6 +2680,25 @@ class Codevs{
      */
     bool isEnemyCastelDetected(){
       return (enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED);
+    }
+
+    /*
+     * 自分の城に拠点があるかどうか
+     */
+    bool isDefended(){
+      Node *node = getNode(myCastelCoordY, myCastelCoordX);
+
+      return node->myUnitCount[BASE] > 0;
+    }
+
+    /*
+     * 敵の城に拠点があるかどうか
+     */
+    bool isEnemyDefended(){
+      assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
+      Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
+
+      return node->enemyUnitCount[BASE] > 0;
     }
 
     /*
@@ -3315,6 +3340,10 @@ class Codevs{
         case CREATE_VILLAGE:
           if(canBuild(unit->type, VILLAGE)){
             createUnit(unit->y, unit->x, VILLAGE);
+
+            if(final){
+              gameStage.createVillageCount += 1;
+            }
           }else{
             return false;
           }
@@ -3623,7 +3652,7 @@ class Codevs{
           Node *node = getNode(enemy->y, enemy->x);
           int centerDist = calcManhattanDist(enemy->y, enemy->x, 50, 50);
 
-          if(!node->resource && centerDist <= 50){
+          if(!node->resource && centerDist <= 20){
             enemyAI = GRUN;
             fprintf(stderr,"stage = %d, turn = %d, is Grun!\n", currentStageNumber, turn);
             return true;
@@ -3643,7 +3672,12 @@ class Codevs{
       set<int>::iterator it = enemyResourceNodeList.begin();
 
       if(enemyAI == CHOKUDAI) return false;
-      if(enemyAI == LILA) return true;
+      if(enemyAI == LILA && isEnemyCastelDetected() && !isEnemyDefended()){
+        enemyAI = CHOKUDAI;
+        return false;
+      }else{
+        return true;
+      }
 
       while(it != enemyResourceNodeList.end()){
         int y = (*it)/WIDTH;
@@ -3728,7 +3762,9 @@ class Codevs{
         it++;
       }
 
-      if(turn <= 150 && gameStage.gameSituation == DANGER){
+      int diff = (calcManhattanDist(myCastelCoordY, myCastelCoordX, 0, 0) <= 10)? 10 : 0;
+
+      if(turn <= 150 + diff && gameStage.gameSituation == DANGER){
         enemyAI = SILVER;
         fprintf(stderr,"stage = %d, turn = %d, is Silver!\n", currentStageNumber, turn);
         return true;
