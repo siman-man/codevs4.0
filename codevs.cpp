@@ -451,7 +451,7 @@ class Codevs{
       gameStage.openedNodeCount = 0;
 
       // 生産上限を初期化
-      createLimit = 40;
+      createLimit = (currentStageNumber <= 23)? 35 : 40;
 
       // 2P側と仮定する
       firstPlayer = false;
@@ -945,6 +945,8 @@ class Codevs{
           unit->troopsLimit = min(unit->troopsLimit, 10);
         }else if(isLila(check) && attackCount <= 1){
           unit->troopsLimit = max(unit->troopsLimit, 40);
+        }else if(isGrun(check) && attackCount <= 1){
+          unit->troopsLimit = max(unit->troopsLimit, 50);
         }
       }else{
         if(isChokudai(check)){
@@ -2074,12 +2076,12 @@ class Codevs{
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
             }else{
-              int safePoint = (isSafePoint(unit->y, unit->x, 2))? 100 : 0;
+              int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 3)? 100 : 0;
 
               if(isGrun()){
-                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist + safePoint;
+                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist - dangerPoint;
               }else{
-                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist + safePoint;
+                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist - dangerPoint;
               }
             }
           }
@@ -2200,7 +2202,7 @@ class Codevs{
         if(operation == CREATE_ASSASIN){
           return 100;
         }else if(operation == CREATE_FIGHTER && myResourceCount <= 100 && myUnitCount.assasinCount >= 30){
-          return 90;
+          return (isGrun())? 110 : 90;
         }else if(operation == CREATE_FIGHTER && (!isLila() && attackCount > 1)){
           return 20;
         }else if(operation == CREATE_FIGHTER && isChokudai()){
@@ -3863,8 +3865,8 @@ class Codevs{
       int diff = (calcManhattanDist(myCastelCoordY, myCastelCoordX, 0, 0) <= 10)? 10 : 0;
 
       if(turn <= 150 + diff && gameStage.gameSituation == DANGER){
-        enemyAI = SILVER;
         fprintf(stderr,"stage = %d, turn = %d, is Silver!\n", currentStageNumber, turn);
+        enemyAI = SILVER;
         return true;
       }else{
         return false;
@@ -4040,7 +4042,7 @@ class CodevsTest{
     if(myActiveUnitList.size() != 0) return false;
     if(enemyActiveUnitList.size() != 0) return false;
     if(resourceNodeList.size() != 0) return false;
-    if(createLimit != 40) return false;
+    if(createLimit != 35) return false;
     if(enemyAI != UNDEFINED) return false;
     if(gameStage.enemyCastelPointList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
