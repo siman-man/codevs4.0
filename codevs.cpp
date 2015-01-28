@@ -122,6 +122,7 @@ const int WIDTH         = 100;    // フィールドの縦幅
 int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 int reverseCoordTable[WIDTH];     // 座標系を逆にするためのテーブル
 int enemyAI = UNDEFINED;
+int maybeAI[9];                   // 敵のAI予測
 
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
@@ -433,6 +434,9 @@ class Codevs{
 
       // 敵の遭遇回数をリセット
       memset(gameStage.currentEnemyUnitCount, 0, sizeof(gameStage.currentEnemyUnitCount));
+
+      // 敵AIの予測をリセット
+      memset(maybeAI, true, sizeof(maybeAI));
 
       // ゲームの初期状態
       gameStage.gameSituation = OPENING;
@@ -932,20 +936,22 @@ class Codevs{
     /*
      * 突撃する人数を変える
      */ 
-    void updateTroopsLimit(Unit *unit){
+    void updateTroopsLimit(Unit *unit, bool check = true){
       // 城が見つかっている場合
       if(isEnemyCastelDetected()){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
 
-        if(!isLila() && node->enemyUnitCount[BASE] <= 0){
+        if(!isLila(check) && node->enemyUnitCount[BASE] <= 0){
           unit->troopsLimit = min(unit->troopsLimit, 10);
-        }else if(isLila() && attackCount <= 1){
-          unit->troopsLimit = max(unit->troopsLimit, 30);
+        }else if(isLila(check) && attackCount <= 1){
+          unit->troopsLimit = max(unit->troopsLimit, 40);
         }
       }else{
-        if(isChokudai()){
+        if(isChokudai(check)){
           unit->troopsLimit = min(unit->troopsLimit, 20);
-        }else if(isGrun() && attackCount <= 1){
+        }else if(isLila(check) && attackCount <= 1){
+          unit->troopsLimit = max(unit->troopsLimit, 40);
+        }else if(isGrun(check) && attackCount <= 1){
           unit->troopsLimit = max(unit->troopsLimit, 50);
         }
       }
@@ -956,7 +962,7 @@ class Codevs{
      */
     int directFirstMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
-      updateTroopsLimit(unit);
+      updateTroopsLimit(unit, false);
 
       switch(unit->type){
         case WORKER:
@@ -1595,24 +1601,26 @@ class Codevs{
           unit->troopsCount = 1;
 
           if(attackCount == 0){
-            if(isGrun()){
+            if(isGrun(false)){
               unit->troopsLimit = 50;
-            }else if(isLila()){
-              unit->troopsLimit = 30;
-            }else if(isChokudai()){
+            }else if(isLila(false)){
+              unit->troopsLimit = 40;
+            }else if(isChokudai(false)){
               unit->troopsLimit = 10;
-            }else{
+            }else if(currentStageNumber <= 30){
               unit->troopsLimit = 30;
+            }else{
+              unit->troopsLimit = 40;
             }
           }else{
             unit->troopsLimit = 1;
           }
           attackCount += 1;
 
-          if(attackCount >= 15 && isChokudai()){
+          if(attackCount >= 15 && isChokudai(false)){
             gameStage.gameSituation = DANGER;
           }
-          if(attackCount >= 20 && isLila()){
+          if(attackCount >= 20 && isLila(false)){
             gameStage.gameSituation = DANGER;
           }
 
@@ -1948,9 +1956,10 @@ class Codevs{
      * 突撃が成功するかどうかを確認、相手の城周りの敵の数、自分のユニットの数を考慮して考える
      */
     bool canAssult(Unit *unit, int ypos, int xpos, int range = 2){
-      assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
+      assert(isEnemyCastelDetected());
       int enemyCastelDist = calcManhattanDist(ypos, xpos, enemyCastelCoordY, enemyCastelCoordX);
       UnitCount myUnitCount = aroundMyUnitCount(unit->y, unit->x, 3);
+      UnitCount aroundEnemyCastelMyUnit = aroundMyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 9);
       UnitCount enemyCount = aroundEnemyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 1);
 
       myUnitCount.fighterCount = max(0, myUnitCount.fighterCount - 2 * enemyCount.assasinCount);
@@ -1959,7 +1968,7 @@ class Codevs{
         return true;
       }else if(isLila() && !isEnemyCastelSpy()){
         return false;
-      }else if(enemyCount.assasinCount + enemyCount.fighterCount + enemyCount.knightCount/2 <= 12){
+      }else if(enemyCount.assasinCount + enemyCount.fighterCount + enemyCount.knightCount/2 <= 12 + aroundEnemyCastelMyUnit.totalCount){
         return true;
       }else{
         return false;
@@ -2028,11 +2037,11 @@ class Codevs{
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return myResourceCount - 10000;
-        }else if(turn <= 100){
+        }else if(turn <= 60){
           if(gameStage.openedNodeCount == 0){
             return 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }else{
-            return 100 * myResourceCount + 3 * gameStage.openedNodeCount - 10 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+            return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }
         }else{
           if(unit->type != WORKER){
@@ -2065,10 +2074,12 @@ class Codevs{
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
             }else{
+              int safePoint = (isSafePoint(unit->y, unit->x, 2))? 100 : 0;
+
               if(isGrun()){
-                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist;
+                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist + safePoint;
               }else{
-                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist;
+                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist + safePoint;
               }
             }
           }
@@ -2115,7 +2126,7 @@ class Codevs{
           return myResourceCount + 10 * node->myUnitCount[WORKER];
         }
       }else{
-        if(isDie(unit, unit->y, unit->x)){
+        if(!isEnemyCastelDetected() && isDie(unit, unit->y, unit->x)){
           unit->mode = SEARCH;
           unit->resourceY = UNDEFINED;
           unit->resourceX = UNDEFINED;
@@ -2166,7 +2177,7 @@ class Codevs{
       Node *node = getNode(castel->y, castel->x);
 
       // 序盤でどれだけワーカーの数を増やすか
-      if(operation == CREATE_WORKER && turn <= 28){
+      if(operation == CREATE_WORKER && turn <= 24){
         return 100;
       }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
         return 100;
@@ -2189,7 +2200,7 @@ class Codevs{
         if(operation == CREATE_ASSASIN){
           return 100;
         }else if(operation == CREATE_FIGHTER && myResourceCount <= 100 && myUnitCount.assasinCount >= 30){
-          return 150;
+          return 90;
         }else if(operation == CREATE_FIGHTER && (!isLila() && attackCount > 1)){
           return 20;
         }else if(operation == CREATE_FIGHTER && isChokudai()){
@@ -2334,8 +2345,16 @@ class Codevs{
             Unit *enemyCastel = getUnit(enemyCastelUnitId);
             int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
             int diff = (enemyCastel->hp < 50000 || enemyCastelDist <= 11 || canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) || node->enemyUnitCount[BASE] == 0)? 0 : 12;
-            int diffY = abs(unit->y - enemyCastelCoordY);
-            int diffX = abs(unit->x - enemyCastelCoordX);
+            Coord bestCoord(enemyCastelCoordY, enemyCastelCoordX);
+
+            if(isLila() && !canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) && enemyCastelDist > 11){
+              bestCoord = stanbyPositionCoord(unit);
+              enemyCastelDist = calcManhattanDist(unit->y, unit->x, bestCoord.y, bestCoord.x);
+              diff = 0;
+            }
+
+            int diffY = abs(unit->y - bestCoord.y);
+            int diffX = abs(unit->x - bestCoord.x);
             int diffAll = abs(diffY - diffX);
             int wallDist = calcNearWallDistance(unit->y, unit->x);
 
@@ -2676,6 +2695,35 @@ class Codevs{
     }
 
     /*
+     * 危険度を計算する
+     */
+    int calcDangerPoint(int ypos, int xpos, int eyeRange){
+      int dangerPoint = 0;
+
+      assert(ypos >= 0 && xpos >= 0);
+      set<int>::iterator it = enemyActiveUnitList.begin();
+
+      while(it != enemyActiveUnitList.end()){
+        Unit *enemy = getUnit(*it);
+        int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
+
+        if(dist <= eyeRange){
+          if(enemy->type == ASSASIN){
+            dangerPoint += 3;
+          }else if(enemy->type == FIGHTER){
+            dangerPoint += 2;
+          }else if(enemy->type == KNIGHT){
+            dangerPoint += 1;
+          }
+        }
+
+        it++;
+      }
+
+      return dangerPoint;
+    }
+
+    /*
      * 敵の城を発見したかどうか
      */
     bool isEnemyCastelDetected(){
@@ -2697,6 +2745,12 @@ class Codevs{
     bool isEnemyDefended(){
       assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
       Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
+
+      if(node->enemyUnitCount[BASE] > 0){
+        maybeAI[CHOKUDAI] = false;
+        maybeAI[COLUN] = false;
+        maybeAI[ROSA] = false;
+      }
 
       return node->enemyUnitCount[BASE] > 0;
     }
@@ -3639,7 +3693,7 @@ class Codevs{
     /*
      * grunかどうかの判定
      */
-    bool isGrun(){
+    bool isGrun(bool check = true){
       set<int>::iterator it = enemyActiveUnitList.begin();
 
       if(enemyAI == LILA) return false;
@@ -3648,7 +3702,7 @@ class Codevs{
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = getUnit(*it);
 
-        if(enemy->type == VILLAGE){
+        if(check && enemy->type == VILLAGE){
           Node *node = getNode(enemy->y, enemy->x);
           int centerDist = calcManhattanDist(enemy->y, enemy->x, 50, 50);
 
@@ -3666,16 +3720,60 @@ class Codevs{
     }
 
     /*
+     * 
+     */
+    Coord stanbyPositionCoord(Unit *unit){
+      assert(enemyCastelCoordY >= 0 &&  enemyCastelCoordX >= 0);
+
+      Coord bestCoord(enemyCastelCoordY - 6, enemyCastelCoordX - 6);
+      int minDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY - 6, enemyCastelCoordX - 6);
+      int dist;
+
+      if(enemyCastelCoordX + 6 < WIDTH){
+        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX + 6);
+
+        if(minDist > dist){
+          minDist = dist;
+          bestCoord.y = enemyCastelCoordY;
+          bestCoord.x = enemyCastelCoordX + 6;
+        }
+      }
+
+      if(enemyCastelCoordY + 6 < HEIGHT){
+        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY + 6, enemyCastelCoordX);
+
+        if(minDist > dist){
+          minDist = dist;
+          bestCoord.y = enemyCastelCoordY + 6;
+          bestCoord.x = enemyCastelCoordX;
+        }
+      }
+
+      if(enemyCastelCoordY + 6 < HEIGHT && enemyCastelCoordX + 6 < WIDTH){
+        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY + 6, enemyCastelCoordX + 6);
+
+        if(minDist > dist){
+          minDist = dist;
+          bestCoord.y = enemyCastelCoordY + 6;
+          bestCoord.x = enemyCastelCoordX + 6;
+        }
+      }
+
+      return bestCoord;
+    }
+
+    /*
      * Lilaかどうかを判定
      */
-    bool isLila(){
+    bool isLila(bool check = true){
       set<int>::iterator it = enemyResourceNodeList.begin();
 
       if(enemyAI == CHOKUDAI) return false;
-      if(enemyAI == LILA && isEnemyCastelDetected() && !isEnemyDefended()){
+      if(check && enemyAI == LILA && maybeAI[CHOKUDAI] && isEnemyCastelDetected() && isEnemyCastelSpy() && !isEnemyDefended()){
+        fprintf(stderr,"stage = %d, turn = %d, not Lila is Chokudai!\n", currentStageNumber, turn);
         enemyAI = CHOKUDAI;
         return false;
-      }else{
+      }else if(enemyAI == LILA){
         return true;
       }
 
@@ -3684,7 +3782,7 @@ class Codevs{
         int x = (*it)%WIDTH;
         Node *node = getNode(y,x);
 
-        if(node->enemyUnitCount[VILLAGE] == 1){
+        if(check && node->enemyUnitCount[VILLAGE] == 1){
           createLimit = 40;
           fprintf(stderr,"stage = %d, turn = %d: is Lila!\n", currentStageNumber, turn);
           return true;
@@ -3701,7 +3799,7 @@ class Codevs{
      *   - 資源マスの上に村を設置
      *   - 資源マスの上に拠点を設定
      */
-    bool isChokudai(){
+    bool isChokudai(bool check = true){
       set<int>::iterator it = resourceNodeList.begin();
 
       if(enemyAI == CHOKUDAI) return true;
@@ -3713,7 +3811,7 @@ class Codevs{
         int x = (*it)%WIDTH;
         Node *node = getNode(y,x);
 
-        if(isOccupied(y,x)){
+        if(check && isOccupied(y,x)){
           if(node->enemyUnitCount[VILLAGE] == 1 && node->enemyUnitCount[BASE] == 1){
             fprintf(stderr,"stage = %d, turn = %d, is Chokudai!\n", currentStageNumber, turn);
             enemyAI = CHOKUDAI;
@@ -3724,7 +3822,7 @@ class Codevs{
 
         int rightBottomDist = calcManhattanDist(y, x, 99, 99);
 
-        if(turn <= 110 && rightBottomDist >= 100 && node->myUnitCount[VILLAGE] == 1 && node->myUnitCount[WORKER] == 5 && node->enemyUnitCount[VILLAGE] > 0){
+        if(check && turn <= 110 && rightBottomDist >= 100 && node->myUnitCount[VILLAGE] == 1 && node->myUnitCount[WORKER] == 5 && node->enemyUnitCount[VILLAGE] > 0){
           cnt++;
 
           if(cnt > 1){
