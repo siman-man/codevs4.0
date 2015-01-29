@@ -610,6 +610,7 @@ class Codevs{
       unit.castelAttackCount  = 0;
       unit.leaderId           = UNDEFINED;
       unit.troopsCount        = 0;
+      unit.troopsLimit        = MAX_VALUE;
       unit.attackRange        = unitAttackRange[unitType];
       unit.eyeRange           = unitEyeRange[unitType];
       unit.movable            = unitCanMove[unitType];
@@ -639,6 +640,8 @@ class Codevs{
       // 戦闘員の場合は、近くにいるリーダを探す
       if(unitList[unitId].role == COMBATANT){
         searchLeader(&unitList[unitId]);
+
+        assert(unitList[unitId].leaderId >= 0);
       }
     }
 
@@ -652,6 +655,7 @@ class Codevs{
       int leaderId = UNDEFINED;
 
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *other = getUnit(*it);
         assert(unit->y >= 0 && unit->x >= 0 && other->y >= 0 && other->x >= 0);
         dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
@@ -684,6 +688,8 @@ class Codevs{
         switchLeader(unit);
       }
       if(unit->role == COMBATANT){
+        fprintf(stderr,"leaderId = %d\n", unit->leaderId);
+        assert(unit->leaderId >= 0);
         Unit *leader = getUnit(unit->leaderId);
         leader->troopsCount -= 1;
       }
@@ -696,7 +702,10 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
       int newLeaderId = searchNextLeader(leader);
 
+      assert(newLeaderId >= 0);
+
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *unit = getUnit(*it);
 
         if(unit->id == newLeaderId){
@@ -722,6 +731,7 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *unit = getUnit(*it);
 
         if(unit->id != leader->id && unit->movable){
@@ -811,6 +821,7 @@ class Codevs{
      * 資源マスの追加を行う
      */    
     void addResourceNode(int y, int x){
+      assert(y >= 0 && x >= 0);
       gameStage.field[y][x].resource = true;
       resourceNodeList.insert(y*WIDTH+x);
     }
@@ -1167,7 +1178,7 @@ class Codevs{
         if(checkList[cell.y*WIDTH+cell.x]) continue;
         checkList[cell.y*WIDTH+cell.x] = true;
 
-        Node *node = &gameStage.field[cell.y][cell.x];
+        Node *node = getNode(cell.y, cell.x);
 
         if(!node->searched && node->markCount == 0){
           return Coord(cell.y, cell.x);
@@ -1310,7 +1321,8 @@ class Codevs{
      *     hp: HP
      */
     void updateEnemyUnitStatus(int unitId, int y, int x, int hp){
-      Unit *unit = getUnit(unitId);
+      assert(unitId >= 0);
+      Unit *unit      = getUnit(unitId);
       unit->y         = y;
       unit->x         = x;
       unit->hp        = hp;
@@ -1331,6 +1343,7 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *unit = getUnit(*it);
         unit->mode = directUnitMode(unit);
 
@@ -1356,7 +1369,8 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
-        Unit *unit = &unitList[*it];
+        assert(*it >= 0);
+        Unit *unit = getUnit(*it);
 
         // SEARCHモードのユニットの目的地の設定されていない場合、更新する。
         if((unit->mode == SEARCH) && (gameStage.field[unit->destY][unit->destX].searched || (unit->destY == UNDEFINED && unit->destX == UNDEFINED))){
@@ -1366,6 +1380,10 @@ class Codevs{
           assert(unit->destY >= 0 && unit->destX >= 0);
         }else if(unit->mode == RESOURCE_BREAK){
           updateVillageBreakerDestination(unit);
+        }
+
+        if(unit->mode == SEARCH){
+          assert(unit->destY >= 0 && unit->destX >= 0);
         }
 
         it++;
@@ -1383,7 +1401,7 @@ class Codevs{
         Coord coord = directTargetPoint(seacher->y, seacher->x, gameStage.targetY, gameStage.targetX);
         seacher->destY = coord.y;
         seacher->destX = coord.x;
-      }else if(enemyCastelCoordY != UNDEFINED && enemyCastelCoordX != UNDEFINED){
+      }else if(isEnemyCastelDetected()){
         seacher->destY = enemyCastelCoordY;
         seacher->destX = enemyCastelCoordX;
       }else{
@@ -1452,18 +1470,16 @@ class Codevs{
                 return DESTROY;
               }
               break;
-            default:
-              if(unit->mode == SEARCH){
+            case COMBATANT:
+              if(unitList[unit->leaderId].mode == DESTROY){
+                return DESTROY;
+              }else if(unit->mode == SEARCH){
                 return SEARCH;
               }else{
-                Unit *leader = getUnit(unit->leaderId);
-
-                if(leader->mode == DESTROY){
-                  return DESTROY;
-                }else{
-                  return STAY;
-                }
+                return STAY;
               }
+            default:
+              return SEARCH;
               break;
           }
           break;
@@ -1483,13 +1499,14 @@ class Codevs{
                 return DESTROY;
               }
               break;
-            default:
-              Unit *leader = &unitList[unit->leaderId];
-              if(leader->mode == DESTROY){
+            case COMBATANT:
+              if(unitList[unit->leaderId].mode == DESTROY){
                 return DESTROY;
               }else{
                 return STAY;
               }
+            default:
+              return SEARCH;
               break;
           }
           break;
@@ -1510,13 +1527,15 @@ class Codevs{
                 return DESTROY;
               }
               break;
-            default:
-              Unit *leader = getUnit(unit->leaderId);
-              if(leader->mode == DESTROY){
+            case COMBATANT:
+              if(unitList[unit->leaderId].mode == DESTROY){
                 return DESTROY;
               }else{
                 return STAY;
               }
+              break;
+            default:
+              return SEARCH;
               break;
           }
           break;
@@ -1551,6 +1570,7 @@ class Codevs{
         set<int>::iterator it = enemyActiveUnitList.begin();
 
         while(it != enemyActiveUnitList.end()){
+          assert(*it >= 0);
           Unit *enemy = getUnit(*it);
 
           assert(enemy->y >= 0 && enemy->x >= 0 && myCastelCoordY >= 0 && myCastelCoordX >= 0);
@@ -1571,6 +1591,7 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *other = getUnit(*it);
         assert(y >= 0 && x >= 0 && other->y >= 0 && other->x >= 0);
         int dist = calcManhattanDist(y, x, other->y, other->x);
@@ -1648,7 +1669,8 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
-        Unit *unit = &unitList[*it];
+        assert(*it >= 0);
+        Unit *unit = getUnit(*it);
         Node *node = getNode(unit->y, unit->x);
 
         if(unit->type == VILLAGE && node->myUnitCount[WORKER] >= 5){
@@ -1882,10 +1904,13 @@ class Codevs{
             return calcLeaderEvaluation(unit, operation);
           }else if(unit->role == GUARDIAN){
             return calcGuardianEvaluation(unit, operation);
+          }else if(unit->role == COMBATANT){
+            return calcCombatEvaluation(unit, operation);
           }else if(unit->mode == SEARCH){
             return calcSeacherEvaluation(unit, operation);
           }else{
-            return calcCombatEvaluation(unit, operation);
+            assert(unit->destY >= 0 && unit->destX >= 0);
+            return calcSeacherEvaluation(unit, operation);
           }
           break;
         case FIGHTER:
@@ -1898,7 +1923,8 @@ class Codevs{
           }else if(unit->mode == RESOURCE_BREAK){
             return calcVillageBreakerEvaluation(unit, operation);
           }else{
-            return calcCombatEvaluation(unit, operation);
+            assert(unit->destY >= 0 && unit->destX >= 0);
+            return calcSeacherEvaluation(unit, operation);
           }
           break;
         case ASSASIN:
@@ -1913,7 +1939,8 @@ class Codevs{
           }else if(unit->mode == SEARCH){
             return calcSeacherEvaluation(unit, operation);
           }else{
-            return calcCombatEvaluation(unit, operation);
+            assert(unit->destY >= 0 && unit->destX >= 0);
+            return calcSeacherEvaluation(unit, operation);
           }
           break;
         default:
@@ -2343,6 +2370,7 @@ class Codevs{
           break;
         case DESTROY:
           if(isEnemyCastelDetected()){
+            assert(enemyCastelUnitId >= 0);
             Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
             Unit *enemyCastel = getUnit(enemyCastelUnitId);
             int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
@@ -2413,6 +2441,7 @@ class Codevs{
      * 戦闘員の行動評価関数
      */
     int calcCombatEvaluation(Unit *unit, int operation){
+      assert(unit->leaderId >= 0);
       Unit *leader = getUnit(unit->leaderId);
       Node *node = getNode(unit->y, unit->x);
       int limit = (leader->y == enemyCastelCoordY && leader->x == enemyCastelCoordX)? 10 : 10;
@@ -2596,6 +2625,7 @@ class Codevs{
      * ノードを取得する
      */
     inline Node* getNode(int y, int x){
+      assert(y >= 0 && x >= 0);
       return &gameStage.field[y][x];
     }
 
@@ -2603,6 +2633,7 @@ class Codevs{
      * ユニット情報を取得する
      */
     inline Unit* getUnit(int unitId){
+      assert(unitId >= 0);
       return &unitList[unitId];
     }
 
@@ -2683,6 +2714,7 @@ class Codevs{
       set<int>::iterator it = enemyActiveUnitList.begin();
 
       while(it != enemyActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *enemy = getUnit(*it);
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
 
@@ -2706,6 +2738,7 @@ class Codevs{
       set<int>::iterator it = enemyActiveUnitList.begin();
 
       while(it != enemyActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *enemy = getUnit(*it);
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
 
@@ -3545,6 +3578,7 @@ class Codevs{
 
       while(!prique.empty()){
         MovePriority mp = prique.top(); prique.pop();
+        assert(mp.unitId >= 0);
         Unit *unit = getUnit(mp.unitId);
 
         Operation bestOperation = directUnitOperation(unit);
@@ -3679,6 +3713,7 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *unit = getUnit(*it);
         int dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
 
@@ -3702,6 +3737,7 @@ class Codevs{
       if(enemyAI == GRUN) return true;
 
       while(it != enemyActiveUnitList.end()){
+        assert(*it >= 0);
         Unit *enemy = getUnit(*it);
 
         if(check && enemy->type == VILLAGE){
@@ -3879,7 +3915,11 @@ class Codevs{
      *   x: x座標
      */
     bool isWall(int y, int x){
-      return walls[y+1][x+1];
+      if(y >= 0 && x >= 0 && y < HEIGHT+2 && x < WIDTH+2){
+        return walls[y+1][x+1];
+      }else{
+        return true;
+      }
     }
 
     /*
@@ -5362,7 +5402,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  cvt.runTest();
+  //cvt.runTest();
 
   return 0;
 }
