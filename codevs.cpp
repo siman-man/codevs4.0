@@ -29,15 +29,14 @@ const int VILLAGE         =  5; // 村
 const int BASE            =  6; // 拠点
 const int COMBATANT       =  7; // 戦闘員
 const int LEADER          =  8; // 戦闘隊長
-const int SPY             =  9; // スパイ
-const int COLLIERY        = 10; // 炭鉱(資源マスにワーカーが5人いる状態)
-const int RESOURCE_BREAK  = 11; // 相手の村をひたすら破壊する族
-const int KING            = 12; // 王様
-const int GUARDIAN        = 13; // 守護者
-const int GHQ             = 14; // 作戦司令本部(自軍の城の上にある拠点)
+const int COLLIERY        =  9; // 炭鉱(資源マスにワーカーが5人いる状態)
+const int RESOURCE_BREAK  = 10; // 相手の村をひたすら破壊する族
+const int KING            = 11; // 王様
+const int GUARDIAN        = 12; // 守護者
+const int GHQ             = 13; // 作戦司令本部(自軍の城の上にある拠点)
 
 // 行動の基本優先順位
-int movePriority[15] = { 5, 9, 8, 7, 0, 10, 15, 1, 20, 1, 0, 0, 30, 50, 99};
+int movePriority[14] = { 5, 9, 8, 7, 0, 10, 15, 1, 20, 0, 0, 30, 50, 99};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -77,6 +76,7 @@ const int DESTROY         = 2; // 破壊(敵を見つけて破壊)
 const int PICKING         = 3; // 資源採取
 const int STAY            = 4; // 待機命令
 const int RESOURCE_BREAKE = 5; // 相手の資源マスを狙う
+const int SPY             = 6; // 敵に見つからないように行動
 
 // 各種最大値
 const int OPERATION_MAX = 12;   // 行動の種類
@@ -97,7 +97,7 @@ const int MY = 0;                   // 自軍ID
 const int ENEMY = 1;                // 敵軍ID
 bool firstPlayer = false;           // 1P側かどうか
 int attackCount = 0;                // 突撃した回数
-int createLimit = 35;               // 生産に関係する制限
+int createLimit = 40;               // 生産に関係する制限
 int enemyCastelUnitId = UNDEFINED;  // 敵の城のID
 int mostDownCoordY  = UNDEFINED;    // 一番下に探索したy座標
 int mostRightCoordX = UNDEFINED;    // 一番右に探索したx座標
@@ -454,7 +454,7 @@ class Codevs{
       gameStage.openedNodeCount = 0;
 
       // 生産上限を初期化
-      createLimit = (currentStageNumber <= 23)? 35 : 40;
+      createLimit = (currentStageNumber <= 23)? 40 : 40;
 
       // 2P側と仮定する
       firstPlayer = false;
@@ -516,7 +516,7 @@ class Codevs{
       // 現在のターン数(0-index)
       scanf("%d", &turn);
 
-      if(currentStageNumber == 41 && turn % 10 == 0){
+      if(currentStageNumber == 40 && turn % 20 == 0){
         fprintf(stderr,"totalTurn = %d\n", totalTurn + turn);
       }
 
@@ -774,6 +774,27 @@ class Codevs{
     }
 
     /*
+     * 既に生産上限に達しているかどうか
+     */
+    bool isCreateLimitReach(){
+      set<int>::iterator it = resourceNodeList.begin();
+      int rockOnCount = 0;
+
+      while(it != resourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000);
+        int y = (*it)/WIDTH;
+        int x = (*it)%WIDTH;
+        Node *node = getNode(y,x);
+
+        rockOnCount += node->rockon;
+
+        it++;
+      }
+
+      return 10 + rockOnCount * 5 >= createLimit;
+    }
+
+    /*
      * 敵軍のユニットを削除する
      */
     void removeEnemyUnit(Unit *unit){
@@ -959,7 +980,7 @@ class Codevs{
       if(isEnemyCastelDetected()){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
 
-        if(!isLila(check) && node->enemyUnitCount[BASE] <= 0){
+        if(!isLila(check) && isEnemyCastelSpy() && node->enemyUnitCount[BASE] <= 0){
           unit->troopsLimit = min(unit->troopsLimit, 10);
         }else if(isLila(check) && attackCount <= 1){
           unit->troopsLimit = max(unit->troopsLimit, 40);
@@ -993,6 +1014,9 @@ class Codevs{
             unit->destX = unit->x;
 
             return PICKING;
+          //}else if(unit->id == 1 || unit->id == 2){
+          }else if(unit->id == 1){
+            return SPY;
           }else{
             return SEARCH;
           }
@@ -1123,7 +1147,7 @@ class Codevs{
         }
 
         int id = gameStage.enemyCastelPointList.front();
-        assert(id >= 0 && id < 10000);
+        assert(id >= 0 && id < 20000);
         int y = id / WIDTH;
         int x = id % WIDTH;
 
@@ -1454,7 +1478,7 @@ class Codevs{
 
       switch(unit->type){
         case WORKER:
-          if(unit->mode == PICKING || (gameStage.incomeResource < createLimit && pickModeCheck(unit))){
+          if(unit->mode == PICKING || (gameStage.incomeResource < createLimit && !isCreateLimitReach() && pickModeCheck(unit))){
             if(node->resource && node->myUnitCount[VILLAGE] >= 1 && castelDist >= 20 && unit->birthday <= 20){
               return SEARCH;
             }else{
@@ -1462,6 +1486,14 @@ class Codevs{
             }
           }else if(unit->role == KING){
             return STAY;
+          }else if(unit->mode == SPY){
+            int dist = calcManhattanDist(unit->y, unit->x, 99, 99);
+
+            if(dist <= 12){
+              return SEARCH;
+            }else{
+              return SPY;
+            }
           }else{
             return SEARCH;
           }
@@ -1709,6 +1741,7 @@ class Codevs{
      */
     bool pickModeCheck(Unit *unit){
       set<int>::iterator it = resourceNodeList.begin();
+      if(unit->mode == SPY) return false;
 
       while(it != resourceNodeList.end()){
         int y = (*it)/WIDTH;
@@ -1719,7 +1752,6 @@ class Codevs{
         Node *node = getNode(y,x);
 
         if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x) && rightBottomDist >= 100){
-          //fprintf(stderr,"RockOn: turn = %d, unitId = %d, y = %d, x = %d\n", turn, unit->id, y, x);
           node->rockon = true;
           unit->resourceY = y;
           unit->resourceX = x;
@@ -1811,13 +1843,7 @@ class Codevs{
       while(it != myActiveUnitList.end()){
         Unit *unit = &unitList[*it];
 
-        if(turn == 175){
-          //fprintf(stderr,"turn = %d, unitId = %d, mode = %d\n", turn, unit->id, unit->mode);
-        }
-
         if((unit->mode == SEARCH || unit->mode == DESTROY) && !gameStage.castelAttack && underAttack(unit) && isCastelDamage(unit)){
-          //fprintf(stderr,"turn = %d, id = %d, y = %d, x = %d, beforeHp = %d, hp = %d\n", turn, unit->id, unit->y, unit->x, unit->beforeHp, unit->hp);
-          //fprintf(stderr,"unitId = %d is receive castel damage: %d\n", unit->id, gameStage.castelAttack);
           unit->castelAttackCount += 1;
 
           if(!gameStage.castelAttack){
@@ -1825,7 +1851,6 @@ class Codevs{
             setCastelPointList(unit->y,unit->x);
 
             if(gameStage.enemyCastelPointList.size() == 0){
-              //fprintf(stderr,"No castel point\n");
               queue<int> que;
               gameStage.enemyCastelPointList = que;
               gameStage.castelAttack = false;
@@ -1837,7 +1862,7 @@ class Codevs{
               hitPointY = unit->y;
               hitPointX = unit->x;
               movePriority[WORKER] = 99;
-              //fprintf(stderr,"turn = %d, hitPointY = %d, hitPointX = %d\n", turn, hitPointY, hitPointX);
+              fprintf(stderr,"turn = %d, hitPointY = %d, hitPointX = %d\n", turn, hitPointY, hitPointX);
 
               gameStage.targetY = y;
               gameStage.targetX = x;
@@ -1871,12 +1896,14 @@ class Codevs{
         case WORKER:
           switch(unit->mode){
             case SEARCH:
-              //fprintf(stderr,"turn = %d, id = %d, y = %d, x = %d, mode = %d\n", turn, unit->id, unit->destY, unit->destX, unit->mode);
               assert(unit->destY >= 0 && unit->destX >= 0);
               return calcSeacherEvaluation(unit, operation);
               break;
             case PICKING:
               return calcPickingEvaluation(unit, operation);
+              break;
+            case SPY:
+              return calcSpyEvaluation(unit, operation);
               break;
             case STAY:
               return calcKingEvaluation(unit, operation);
@@ -2024,6 +2051,9 @@ class Codevs{
       int fighterCount  = 0;
       int assasinCount  = 0;
 
+      UnitCount enemyUnitCount = aroundEnemyUnitCount(ypos, xpos, range);
+      UnitCount myUnitCount = aroundMyUnitCount(ypos, xpos, range);
+
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), 0));
@@ -2078,7 +2108,7 @@ class Codevs{
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return myResourceCount - 10000;
-        }else if(turn <= 60){
+        }else if(turn <= 80){
           if(gameStage.openedNodeCount == 0){
             return 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }else{
@@ -2141,6 +2171,35 @@ class Codevs{
         return 10;
       }else{
         return 0;
+      }
+    }
+
+    /*
+     * SPY状態の評価値
+     */
+    int calcSpyEvaluation(Unit *unit, int operation){
+      Node *node = getNode(unit->y, unit->x);
+      int dist = calcManhattanDist(unit->y, unit->x, 99, 99);
+      int diffY   = abs(unit->y - 95);
+      int diffX   = abs(unit->x - 95);
+      int diffAll = abs(diffY - diffX);
+      int rightUpDist = calcManhattanDist(unit->y, unit->x, 0, 95);
+      int leftDownDist = calcManhattanDist(unit->y, unit->x, 95, 0);
+
+      if(operation == CREATE_BASE && canBuildBase(unit)){
+        return 10000000;
+      }else if(operation == CREATE_VILLAGE && unit->y == hitPointY && unit->x == hitPointX && node->myUnitCount[VILLAGE] <= 1){
+        return MAX_VALUE;
+      }else if(operation == NO_MOVE){
+        return MIN_VALUE;
+      }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
+        return MIN_VALUE;
+      }else{
+        if(myCastelCoordY < myCastelCoordX){
+          return -2 * dist - node->cost - rightUpDist;
+        }else{
+          return -2 * dist - node->cost - leftDownDist;
+        }
       }
     }
 
@@ -2218,7 +2277,7 @@ class Codevs{
       Node *node = getNode(castel->y, castel->x);
 
       // 序盤でどれだけワーカーの数を増やすか
-      if(operation == CREATE_WORKER && turn <= 24){
+      if(operation == CREATE_WORKER && turn <= 16){
         return 100;
       }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
         return 100;
@@ -2234,13 +2293,16 @@ class Codevs{
       if(myResourceCount <= 100 && operation != NO_MOVE && !isEnemyCastelDetected()) return -100;
       if(myResourceCount <= 100 && operation != NO_MOVE && isEnemyCastelDetected() && isLila() && !isEnemyCastelSpy()) return -100;
       UnitCount myUnitCount = aroundMyUnitCount(base->y, base->x, 10);
+      int bestUnit = checkAdvantageousUnit(base->y, base->x);
 
       if(isEnemyCastelDetected()){
         UnitCount aroundEnemyCastelMyUnitCount = aroundMyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 10);
 
         if(operation == CREATE_ASSASIN){
           return 100;
-        }else if(operation == CREATE_FIGHTER && myResourceCount <= 100 && myUnitCount.assasinCount >= 30){
+        }else if(operation == bestUnit){
+          return 150;
+        }else if(operation == CREATE_FIGHTER && myUnitCount.assasinCount >= 30){
           return (isGrun())? 110 : 90;
         }else if(operation == CREATE_FIGHTER && (!isLila() && attackCount > 1)){
           return 20;
@@ -2387,7 +2449,6 @@ class Codevs{
             Unit *enemyCastel = getUnit(enemyCastelUnitId);
             int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
             int diff = (enemyCastel->hp < 50000 || enemyCastelDist <= 11 || canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) || node->enemyUnitCount[BASE] == 0)? 0 : 12;
-            int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 30)? 20 : 0;
             Coord bestCoord(enemyCastelCoordY, enemyCastelCoordX);
 
             if(isLila() && !canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) && enemyCastelDist > 11){
@@ -2414,7 +2475,7 @@ class Codevs{
                 return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - 2 * wallDist - node->receiveDamage[unit->type]/10;
               }
             }else{
-              return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - node->receiveDamage[unit->type]/10 - dangerPoint;
+              return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - node->receiveDamage[unit->type]/10;
             }
           }else if(!gameStage.castelAttack){
             int diffY = abs(unit->y - gameStage.targetY);
@@ -2426,12 +2487,11 @@ class Codevs{
             int diffX = abs(unit->x - gameStage.targetX);
             int diffAll = abs(diffY - diffX);
             int wallDist = calcNearWallDistance(unit->y, unit->x);
-            int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 30)? 10 : 0;
 
             if(isGrun()){
               return -4 * targetDist + 5 * killCount - 2 * wallDist - node->receiveDamage[unit->type]/10;
             }else{
-              return -4 * targetDist - 2 * diffAll - node->receiveDamage[unit->type]/10 - dangerPoint;
+              return -4 * targetDist - 2 * diffAll - node->receiveDamage[unit->type]/10;
             }
           }
           break;
@@ -2671,6 +2731,12 @@ class Codevs{
           if(x < 4){
             node->cost += 10000;
           }
+          if(y > HEIGHT-5){
+            node->cost += 10000;
+          }
+          if(x > WIDTH-5){
+            node->cost += 10000;
+          }
         }
       }
     }
@@ -2744,7 +2810,7 @@ class Codevs{
     /*
      * 危険度を計算する
      */
-    int calcDangerPoint(int ypos, int xpos, int eyeRange){
+    int calcDangerPoint(int ypos, int xpos, int eyeRange, bool spy = false){
       int dangerPoint = 0;
 
       assert(ypos >= 0 && xpos >= 0);
@@ -2761,6 +2827,8 @@ class Codevs{
           }else if(enemy->type == FIGHTER){
             dangerPoint += 2;
           }else if(enemy->type == KNIGHT){
+            dangerPoint += 1;
+          }else if(spy){
             dangerPoint += 1;
           }
         }
@@ -5414,7 +5482,7 @@ int main(){
   CodevsTest cvt;
 
   cv.run();
-  //cvt.runTest();
+  cvt.runTest();
 
   return 0;
 }
