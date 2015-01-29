@@ -405,6 +405,9 @@ class Codevs{
       // 敵ユニットリストの初期化
       enemyActiveUnitList.clear();
 
+      // 行動の優先順位を初期化
+      movePriority[WORKER] = 5;
+
       // 突撃回数の初期化
       attackCount = 0;
       
@@ -688,7 +691,6 @@ class Codevs{
         switchLeader(unit);
       }
       if(unit->role == COMBATANT){
-        fprintf(stderr,"leaderId = %d\n", unit->leaderId);
         assert(unit->leaderId >= 0);
         Unit *leader = getUnit(unit->leaderId);
         leader->troopsCount -= 1;
@@ -725,7 +727,7 @@ class Codevs{
      */
     int searchNextLeader(Unit *leader){
       int minDist = MAX_VALUE;
-      int leaderId = UNDEFINED;
+      int leaderId = 0;
       int dist;
 
       set<int>::iterator it = myActiveUnitList.begin();
@@ -756,6 +758,7 @@ class Codevs{
       set<int>::iterator it = resourceNodeList.begin();
 
       while(it != resourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000);
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
         Node *node = getNode(y,x);
@@ -774,6 +777,7 @@ class Codevs{
      * 敵軍のユニットを削除する
      */
     void removeEnemyUnit(Unit *unit){
+      assert(unit->id >= 0);
       enemyActiveUnitList.erase(unit->id);
       gameStage.currentEnemyUnitCount[unit->type] -= 1;
       unitIdCheckList[unit->id] = false;
@@ -833,6 +837,7 @@ class Codevs{
      * いずれかを満たす場合は占領されていると判断
      */
     bool isOccupied(int y, int x){
+      assert(y >= 0 && x >= 0);
       Node *node = getNode(y, x);
       return (node->resource && (node->enemyUnitCount[WORKER] > 0 || node->enemyUnitCount[VILLAGE] > 0));
     }
@@ -844,6 +849,7 @@ class Codevs{
       set<int>::iterator it = resourceNodeList.begin();
 
       while(it != resourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000); 
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
@@ -870,6 +876,7 @@ class Codevs{
       set<int>::iterator it = enemyResourceNodeList.begin();
 
       while(it != enemyResourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000); 
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
@@ -1052,6 +1059,7 @@ class Codevs{
         }
       }
 
+      assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0);
       return Coord(enemyCastelCoordY, enemyCastelCoordX);
     }
 
@@ -1063,10 +1071,13 @@ class Codevs{
       set<int>::iterator it = resourceNodeList.begin();
 
       while(it != resourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000);
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
-        gameStage.incomeResource += min(5, gameStage.field[y][x].myUnitCount[WORKER]);
+        Node *node = getNode(y, x);
+
+        gameStage.incomeResource += min(5, node->myUnitCount[WORKER]);
 
         it++;
       }
@@ -1112,6 +1123,7 @@ class Codevs{
         }
 
         int id = gameStage.enemyCastelPointList.front();
+        assert(id >= 0 && id < 10000);
         int y = id / WIDTH;
         int x = id % WIDTH;
 
@@ -2103,7 +2115,7 @@ class Codevs{
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
             }else{
-              int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 3)? 100 : 0;
+              int dangerPoint = (calcDangerPoint(unit->y, unit->x, 4) >= 3)? 100 : 0;
 
               if(isGrun()){
                 return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist - dangerPoint;
@@ -2375,6 +2387,7 @@ class Codevs{
             Unit *enemyCastel = getUnit(enemyCastelUnitId);
             int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
             int diff = (enemyCastel->hp < 50000 || enemyCastelDist <= 11 || canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) || node->enemyUnitCount[BASE] == 0)? 0 : 12;
+            int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 30)? 20 : 0;
             Coord bestCoord(enemyCastelCoordY, enemyCastelCoordX);
 
             if(isLila() && !canAssult(unit, enemyCastelCoordY, enemyCastelCoordX) && enemyCastelDist > 11){
@@ -2401,7 +2414,7 @@ class Codevs{
                 return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - 2 * wallDist - node->receiveDamage[unit->type]/10;
               }
             }else{
-              return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - 2 * wallDist - node->receiveDamage[unit->type]/10;
+              return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - node->receiveDamage[unit->type]/10 - dangerPoint;
             }
           }else if(!gameStage.castelAttack){
             int diffY = abs(unit->y - gameStage.targetY);
@@ -2413,11 +2426,12 @@ class Codevs{
             int diffX = abs(unit->x - gameStage.targetX);
             int diffAll = abs(diffY - diffX);
             int wallDist = calcNearWallDistance(unit->y, unit->x);
+            int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 30)? 10 : 0;
 
             if(isGrun()){
               return -4 * targetDist + 5 * killCount - 2 * wallDist - node->receiveDamage[unit->type]/10;
             }else{
-              return -4 * targetDist + 5 * killCount - 2 * diffAll - node->receiveDamage[unit->type]/10;
+              return -4 * targetDist - 2 * diffAll - node->receiveDamage[unit->type]/10 - dangerPoint;
             }
           }
           break;
@@ -2495,7 +2509,7 @@ class Codevs{
       set<int>::iterator it = enemyActiveUnitList.begin();
 
       while(it != enemyActiveUnitList.end()){
-        Unit *enemy = &unitList[*it];
+        Unit *enemy = getUnit(*it);
 
         assert(ypos >= 0 && xpos >= 0 && enemy->y >= 0 && enemy->x >= 0);
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
@@ -2557,7 +2571,7 @@ class Codevs{
       set<int>::iterator it = myActiveUnitList.begin();
 
       while(it != myActiveUnitList.end()){
-        Unit *other = &unitList[*it];
+        Unit *other = getUnit(*it);
 
         if(unit->id != other->id && other->movable){
           assert(other->y >= 0 && other->x >= 0);
@@ -2625,7 +2639,7 @@ class Codevs{
      * ノードを取得する
      */
     inline Node* getNode(int y, int x){
-      assert(y >= 0 && x >= 0);
+      assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
       return &gameStage.field[y][x];
     }
 
@@ -2633,7 +2647,7 @@ class Codevs{
      * ユニット情報を取得する
      */
     inline Unit* getUnit(int unitId){
-      assert(unitId >= 0);
+      assert(unitId >= 0 && unitId <= 20000);
       return &unitList[unitId];
     }
 
@@ -2665,7 +2679,6 @@ class Codevs{
      * 敵の城が無いことをチェックする
      */
     void checkNoEnemyCastel(int y, int x){
-      //fprintf(stderr,"turn = %d, y = %d, x = %d\n", turn, y, x);
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(y, x), 0));
@@ -2679,7 +2692,7 @@ class Codevs{
         if(checkList[coord.y*WIDTH+coord.x] || dist > 10) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        Node *node = &gameStage.field[coord.y][coord.x];
+        Node *node = getNode(coord.y, coord.x);
         node->enemyCastel = false;
 
         for(int i = 1; i < 5; i++){
@@ -2799,25 +2812,14 @@ class Codevs{
       set<int>::iterator it = enemyActiveUnitList.begin();
       if(unit->timestamp != turn) return false;
 
-      if(turn == 178){
-        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d, enemyCount = %lu\n", unit->id, currentHp, unit->hp, enemyActiveUnitList.size());
-      }
-
       while(it != enemyActiveUnitList.end()){
-        Unit *enemy = &unitList[*it];
+        Unit *enemy = getUnit(*it);
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
-        if(turn == 178){
-          //fprintf(stderr,"id = %d, y = %d, x = %d, attackRange = %d\n", enemy->id, enemy->y, enemy->x, enemy->attackRange);
-        }
 
         if(dist <= unitAttackRange[enemy->type]){
           int k = countMyUnit(enemy->y, enemy->x, unitAttackRange[enemy->type]);
           if(enemy->type == VILLAGE || enemy->type == BASE || enemy->timestamp != turn) return false;
-          //fprintf(stderr,"attack: k = %d\n", k);
           if(k > 0){
-            if(turn == 178){
-              //fprintf(stderr,"attack damage = %d, enemyId = %d\n", DAMAGE_TABLE[enemy->type][unit->type] / k, enemy->id);
-            }
             currentHp -= DAMAGE_TABLE[enemy->type][unit->type] / k;
           }
         }else if(dist == 3 && enemy->timestamp != turn){
@@ -2827,9 +2829,6 @@ class Codevs{
         it++;
       }
 
-      if(turn == 178){
-        //fprintf(stderr,"id = %d, currentHp = %d, hp = %d\n", unit->id, currentHp, unit->hp);
-      }
 
       return (currentHp != unit->hp);
     }
@@ -3017,6 +3016,7 @@ class Codevs{
      * マークを付ける
      */
     void checkMark(int ypos, int xpos){
+      assert(ypos >= 0 && xpos >= 0 && ypos < WIDTH && xpos < HEIGHT);
       int cost = 4;
       map<int, bool> checkList;
       queue<cell> que;
@@ -3071,6 +3071,7 @@ class Codevs{
      * 足跡を付ける
      */
     void checkStamp(int ypos, int xpos, int eyeRange){
+      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
@@ -3218,6 +3219,7 @@ class Codevs{
      * eyeRange: 視界の広さ
      */
     void checkNode(int unitId, int ypos, int xpos, int eyeRange){
+      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
@@ -3250,6 +3252,7 @@ class Codevs{
      * 視界のアンチェックを行う
      */
     void uncheckNode(int unitId, int ypos, int xpos, int eyeRange){
+      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
@@ -3269,18 +3272,21 @@ class Codevs{
      *  eyeRange: 視界の広さ
      */
     void openNode(int ypos, int xpos, int eyeRange){
+      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
         for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
           if(isWall(y,x)) continue;
 
-          gameStage.field[y][x].seenCount += 1;
+          Node *node = getNode(y,x);
 
-          gameStage.openedNodeCount += !gameStage.field[y][x].searched;
-          gameStage.visibleNodeCount += !gameStage.field[y][x].opened;
+          node->seenCount += 1;
 
-          gameStage.field[y][x].opened = true;
+          gameStage.openedNodeCount += !node->searched;
+          gameStage.visibleNodeCount += !node->opened;
+
+          node->opened = true;
         }
       }
     }
@@ -3292,17 +3298,21 @@ class Codevs{
      *  eyeRange: 視界の広さ
      */
     void closeNode(int ypos, int xpos, int eyeRange){
+      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
+
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
         for(int x = max(0, xpos-eyeRange+diff); x <= min(WIDTH-1, xpos+eyeRange-diff); x++){
           if(isWall(y,x)) continue;
-          gameStage.field[y][x].seenCount -= 1;
 
-          bool opened = (gameStage.field[y][x].seenCount > 0);
+          Node *node = getNode(y,x);
+          node->seenCount -= 1;
 
-          gameStage.openedNodeCount -= !gameStage.field[y][x].searched;
-          gameStage.visibleNodeCount -= gameStage.field[y][x].opened ^ opened;
+          bool opened = (node->seenCount > 0);
+
+          gameStage.openedNodeCount -= !node->searched;
+          gameStage.visibleNodeCount -= node->opened ^ opened;
           gameStage.field[y][x].opened = opened;
         }
       }
@@ -3515,6 +3525,7 @@ class Codevs{
      * unitType: ユニットの種類
      */
     void moveUnitCount(int y, int x, int direct, int unitType){
+      assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
       gameStage.field[y][x].myUnitCount[unitType] -= 1;
       gameStage.field[y][x].myUnitTotalCount -= 1;
 
@@ -3617,6 +3628,7 @@ class Codevs{
      * 目的地のリセットを行う
      */
     void resetDestPoint(Unit *unit){
+      assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
       uncheckMark(unit->destY, unit->destX);
       unit->destY = UNDEFINED;
       unit->destX = UNDEFINED;
@@ -3658,8 +3670,8 @@ class Codevs{
      * 渡された座標のマンハッタン距離を計算
      */
     int calcManhattanDist(int y1, int x1, int y2, int x2){
-      assert(y1 >= 0 && x1 >= 0);
-      assert(y2 >= 0 && x2 >= 0);
+      assert(y1 >= 0 && x1 >= 0 && y1 < HEIGHT && x1 < WIDTH);
+      assert(y2 >= 0 && x2 >= 0 && y2 < HEIGHT && x2 < WIDTH);
       return manhattanDist[x1*WIDTH+x2] + manhattanDist[y1*WIDTH+y2];
     }
 
