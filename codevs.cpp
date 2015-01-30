@@ -332,8 +332,9 @@ set<int> enemyActiveUnitList;   // 生存している敵軍のユニットのID�
 set<int> resourceNodeList;      // 資源マスのリスト
 set<int> enemyResourceNodeList; // 敵の資源マスのリスト
 
-bool walls[HEIGHT+2][WIDTH+2];    // 壁かどうかを確認するだけのフィールド
-map<int, bool> unitIdCheckList;   // IDが存在しているかどうかのチェック
+bool walls[HEIGHT+2][WIDTH+2];      // 壁かどうかを確認するだけのフィールド
+int dangerPointList[HEIGHT][WIDTH]; // 危険度
+map<int, bool> unitIdCheckList;     // IDが存在しているかどうかのチェック
 
 GameStage gameStage;      // ゲームフィールド
 
@@ -2172,13 +2173,16 @@ class Codevs{
             // 基本的に村や拠点は作成しない
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
+            }else if(unit->y == unit->beforeY && unit->x == unit->beforeX){
+              return MIN_VALUE;
             }else{
-              int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 3)? 100 : 0;
+              int dangerPoint = dangerPointList[unit->y][unit->x];
+              //int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 3)? 100 : 0;
 
               if(isGrun()){
-                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist - dangerPoint;
+                return 50 * myResourceCount + 10 * gameStage.openedNodeCount - 5 * destDist - 2 * stamp - node->cost - 10 * (node->receiveDamage[unit->type])/100 + 10 * topLeftDist - 2 * dangerPoint;
               }else{
-                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist - dangerPoint;
+                return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist - 2 * dangerPoint;
               }
             }
           }
@@ -2222,20 +2226,20 @@ class Codevs{
         return MIN_VALUE;
       }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
         return MIN_VALUE;
+      }else if(unit->y == unit->beforeY && unit->x == unit->beforeX){
+        return MIN_VALUE;
       }else{
         if(myCastelCoordY < myCastelCoordX){
           if(unit->id == 1){
-          //if(unit->birthday == 5){
-            return -2 * dist - rightUpDist;
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
           }else{
-            return -2 * dist - leftDownDist;
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
           }
         }else{
           if(unit->id == 1){
-          //if(unit->birthday == 5){
-            return -2 * dist - leftDownDist;
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
           }else{
-            return -2 * dist - rightUpDist;
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
           }
         }
       }
@@ -2906,6 +2910,59 @@ class Codevs{
     }
 
     /*
+     * 危険度を更新
+     */
+    void updateDangerPoint(){
+      memset(dangerPointList, 0, sizeof(dangerPointList));
+
+      set<int>::iterator id = enemyActiveUnitList.begin();
+
+      while(id != enemyActiveUnitList.end()){
+        Unit *enemy = getUnit(*id);
+
+        if(enemy->timestamp == turn){
+          if(enemy->type == ASSASIN){
+            addDangerPoint(enemy->y, enemy->x, 3, 3); 
+          }else if(enemy->type == FIGHTER){
+            addDangerPoint(enemy->y, enemy->x, 3, 2); 
+          }else if(enemy->type == FIGHTER){
+            addDangerPoint(enemy->y, enemy->x, 3, 1); 
+          }else if(enemy->type == WORKER){
+            addDangerPoint(enemy->y, enemy->x, 2, 1); 
+          }
+        }
+
+        id++;
+      }
+    }
+
+    /*
+     * 危険度を加算する
+     */
+    void addDangerPoint(int ypos, int xpos, int range, int point){
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), 0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        dangerPointList[coord.y][coord.x] += point;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), dist+1));
+        }
+      }
+    }
+
+    /*
      * 敵の城を発見したかどうか
      */
     bool isEnemyCastelDetected(){
@@ -3303,6 +3360,9 @@ class Codevs{
 
         // 戦闘情報の更新
         updateBattleData();
+
+        // 危険度の更新
+        updateDangerPoint();
 
         // 自軍の役割の更新を行う
         updateUnitRole();
