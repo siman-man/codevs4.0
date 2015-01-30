@@ -2108,7 +2108,7 @@ class Codevs{
         }
       }
 
-      int maxUnitCount = max(max(knightCount/2, fighterCount), assasinCount);
+      int maxUnitCount = max(max(knightCount/4, fighterCount), assasinCount);
 
       if(maxUnitCount == assasinCount){
         return CREATE_ASSASIN;
@@ -2173,6 +2173,7 @@ class Codevs{
             // 基本的に村や拠点は作成しない
             }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
               return MIN_VALUE;
+            // 前にいた場所に戻るのはNG
             }else if(unit->y == unit->beforeY && unit->x == unit->beforeX){
               return MIN_VALUE;
             }else{
@@ -2349,7 +2350,7 @@ class Codevs{
 
         if(operation == CREATE_ASSASIN){
           return 100;
-        }else if(operation == bestUnit && !isLila() && currentStageNumber <= 23){
+        }else if(operation == bestUnit && !isLila() && currentStageNumber <= 50){
           return 110;
         }else if(operation == CREATE_FIGHTER && myUnitCount.assasinCount >= 30){
           return (isGrun())? 110 : 90;
