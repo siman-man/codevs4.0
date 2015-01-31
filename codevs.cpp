@@ -543,9 +543,9 @@ class Codevs{
         firstPlayer = isFirstPlayer();
         if(turn == 0 && unitType == CASTEL){
           if(firstPlayer){
-            //fprintf(stderr,"stage = %d, first player!\n", currentStageNumber);
+            fprintf(stderr,"stage = %d, first player!\n", currentStageNumber);
           }else{
-            //fprintf(stderr,"stage = %d, second player!\n", currentStageNumber);
+            fprintf(stderr,"stage = %d, second player!\n", currentStageNumber);
           }
         }
         coord = reverseCoord(y,x);
