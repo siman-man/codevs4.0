@@ -58,17 +58,6 @@ const int WARNING = 1;  // 敵ユニットを検知
 const int DANGER  = 2;  // 自軍の城の視野に敵を確認
 const int ONRUSH  = 3;  // 突撃(敵の城が見つかり倒しに行く状態)
 
-// 敵一覧
-const int CHOKUDAI  = 0;
-const int COLUN     = 1;
-const int GELB      = 2;
-const int GRUN      = 3;
-const int LILA      = 4;
-const int ROSA      = 5;
-const int SCHWARZ   = 6;
-const int ZINNOVER  = 7;
-const int SILVER    = 8;
-
 // ユニットの行動タイプ
 const int NONE            = 0; // 何もしない(何も出来ない)
 const int SEARCH          = 1; // 探索(空いてないマスを探索)
@@ -122,7 +111,6 @@ const int WIDTH         = 100;    // フィールドの縦幅
 
 int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 int reverseCoordTable[WIDTH];     // 座標系を逆にするためのテーブル
-int enemyAI = UNDEFINED;
 
 // プレイヤーの名前
 const string PLAYER_NAME = "siman";
@@ -462,9 +450,6 @@ class Codevs{
       // 2P側と仮定する
       firstPlayer = false;
 
-      // 敵AIの予想をリセット
-      enemyAI = UNDEFINED;
-
       // フィールドの初期化
       for(int y = 0; y < HEIGHT; y++){
         for(int x = 0; x < WIDTH; x++){
@@ -653,6 +638,7 @@ class Codevs{
 
     /*
      * リーダを探し出す
+     *   unit: ユニット情報
      */
     void searchLeader(Unit *unit){
       set<int>::iterator id = myActiveUnitList.begin();
@@ -680,7 +666,7 @@ class Codevs{
 
     /*
      * 自軍のユニットを削除する
-     * unit: ユニット情報
+     *   unit: ユニット情報
      */
     void removeMyUnit(Unit *unit){
       myActiveUnitList.erase(unit->id);
@@ -701,7 +687,8 @@ class Codevs{
     } 
 
     /*
-     * リーダがいなくなった場合に新しいリーダにスイッチする
+     * リーダがいなくなった場合に新しいリーダに交換する
+     *   leader: 旧リーダ
      */
     void switchLeader(Unit *leader){
       set<int>::iterator id = myActiveUnitList.begin();
@@ -874,7 +861,7 @@ class Codevs{
     /*
      * 資源マスの情報について更新
      */
-    bool updateResourceNodeData(){
+    void updateResourceNodeData(){
       set<int>::iterator it = resourceNodeList.begin();
 
       while(it != resourceNodeList.end()){
@@ -882,6 +869,7 @@ class Codevs{
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
+        // 占領されていたら敵の資源マス
         if(isOccupied(y,x)){
           enemyResourceNodeList.insert(y*WIDTH+x);
         }else{
@@ -2181,8 +2169,6 @@ class Codevs{
         return 100;
       }else if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && myResourceCount >= 800 && gameStage.gameSituation == DANGER){
         return 100;
-      }else if((enemyAI != SILVER && enemyAI != CHOKUDAI && enemyAI != LILA) && operation == NO_MOVE){
-        return 200;
       }else if(operation == NO_MOVE){
         return 10;
       }else{
@@ -2344,8 +2330,6 @@ class Codevs{
           return 150;
         }else if(operation == CREATE_FIGHTER && attackCount > 1){
           return 20;
-        }else if((enemyAI == SILVER || enemyAI == CHOKUDAI || enemyAI == LILA) && gameStage.gameSituation == DANGER && operation == NO_MOVE){
-          return 200;
         }else{
           return 0;
         }
@@ -3384,7 +3368,7 @@ class Codevs{
     }
 
     /*
-     * 視界のアンチェックを行う
+     * 視界の削除
      */
     void uncheckNode(int unitId, int ypos, int xpos, int eyeRange){
       assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
@@ -3409,6 +3393,7 @@ class Codevs{
      */
     void openNode(int ypos, int xpos, int eyeRange){
       assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
+
       for(int y = max(0, ypos-eyeRange); y <= min(HEIGHT-1, ypos+eyeRange); y++){
         int diff = 2*abs(ypos-y)/2;
 
@@ -3449,7 +3434,7 @@ class Codevs{
 
           gameStage.openedNodeCount -= !node->searched;
           gameStage.visibleNodeCount -= node->opened ^ opened;
-          gameStage.field[y][x].opened = opened;
+          node->opened = opened;
         }
       }
     }
@@ -3741,7 +3726,6 @@ class Codevs{
           // 確定した行動はそのままにする
           unitAction(unit, bestOperation.operation, REAL);
 
-
           // 足跡を付ける(足跡が多い場所はなるべく探索しないように)
           if(unit->mode == SEARCH){
             checkStamp(unit->y, unit->x, unit->eyeRange * 2);
@@ -3821,7 +3805,7 @@ class Codevs{
     }
 
     /*
-     * 操作命令を逆にする
+     * 操作命令を逆にする(2P側対応)
      */
     int reverseOperation(int operation){
       if(firstPlayer){
@@ -3872,48 +3856,6 @@ class Codevs{
       return false;
     }
 
-    /*
-     * 
-     */
-    Coord stanbyPositionCoord(Unit *unit){
-      assert(enemyCastelCoordY >= 0 &&  enemyCastelCoordX >= 0);
-
-      Coord bestCoord(enemyCastelCoordY - 6, enemyCastelCoordX - 6);
-      int minDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY - 6, enemyCastelCoordX - 6);
-      int dist;
-
-      if(enemyCastelCoordX + 6 < WIDTH){
-        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX + 6);
-
-        if(minDist > dist){
-          minDist = dist;
-          bestCoord.y = enemyCastelCoordY;
-          bestCoord.x = enemyCastelCoordX + 6;
-        }
-      }
-
-      if(enemyCastelCoordY + 6 < HEIGHT){
-        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY + 6, enemyCastelCoordX);
-
-        if(minDist > dist){
-          minDist = dist;
-          bestCoord.y = enemyCastelCoordY + 6;
-          bestCoord.x = enemyCastelCoordX;
-        }
-      }
-
-      if(enemyCastelCoordY + 6 < HEIGHT && enemyCastelCoordX + 6 < WIDTH){
-        dist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY + 6, enemyCastelCoordX + 6);
-
-        if(minDist > dist){
-          minDist = dist;
-          bestCoord.y = enemyCastelCoordY + 6;
-          bestCoord.x = enemyCastelCoordX + 6;
-        }
-      }
-
-      return bestCoord;
-    }
 
     /*
      * 渡された座標が壁かどうかを判定する。
@@ -3947,17 +3889,6 @@ class Codevs{
      */
     bool canBuild(int unitType, int buildType){
       return (OPERATION_LIST[unitType][buildType+5] && unitCost[buildType] <= myResourceCount);
-    }
-
-    /*
-     * フィールドの表示
-     */
-    void showField(){
-      for(int y = 0; y < HEIGHT; y++){
-        for(int x = 0; x < WIDTH; x++){
-        }
-        fprintf(stderr, "\n");
-      }
     }
 
     /*
@@ -4089,7 +4020,6 @@ class CodevsTest{
     if(enemyActiveUnitList.size() != 0) return false;
     if(resourceNodeList.size() != 0) return false;
     if(createLimit != 35) return false;
-    if(enemyAI != UNDEFINED) return false;
     if(gameStage.enemyCastelPointList.size() != 0) return false;
     if(gameStage.searchedNodeCount != 0) return false;
     if(gameStage.visibleNodeCount != 0) return false;
