@@ -30,13 +30,12 @@ const int BASE            =  6; // 拠点
 const int COMBATANT       =  7; // 戦闘員
 const int LEADER          =  8; // 戦闘隊長
 const int COLLIERY        =  9; // 炭鉱(資源マスにワーカーが5人いる状態)
-const int RESOURCE_BREAK  = 10; // 相手の村をひたすら破壊する族
-const int KING            = 11; // 王様
-const int GUARDIAN        = 12; // 守護者
-const int GHQ             = 13; // 作戦司令本部(自軍の城の上にある拠点)
+const int KING            = 10; // 王様
+const int GUARDIAN        = 11; // 守護者
+const int GHQ             = 12; // 作戦司令本部(自軍の城の上にある拠点)
 
 // 行動の基本優先順位
-int movePriority[14] = { 5, 9, 8, 7, 0, 10, 15, 1, 20, 0, 0, 30, 50, 99};
+int movePriority[13] = { 5, 9, 8, 7, 0, 10, 15, 1, 20, 0, 30, 50, 99};
 
 // 行動一覧
 const int NO_MOVE         =  0; // 何も移動しない
@@ -64,15 +63,15 @@ const int SEARCH          = 1; // 探索(空いてないマスを探索)
 const int DESTROY         = 2; // 破壊(敵を見つけて破壊)
 const int PICKING         = 3; // 資源採取
 const int STAY            = 4; // 待機命令
-const int RESOURCE_BREAKE = 5; // 相手の資源マスを狙う
+const int RESOURCE_BREAK  = 5; // 相手の資源マスを狙う
 const int SPY             = 6; // 敵に見つからないように行動
 
 // 各種最大値
-const int OPERATION_MAX = 12;   // 行動の種類
-const int UNIT_MAX = 7;         // ユニットの種類
-const int COST_MAX = 99999;     // コストの最大値
-const int MIN_VALUE = -9999999;  // 最小値
-const int MAX_VALUE = 9999999;   // 最小値
+const int OPERATION_MAX = 12;     // 行動の種類
+const int UNIT_MAX = 7;           // ユニットの種類
+const int COST_MAX = 99999;       // コストの最大値
+const int MIN_VALUE = -9999999;   // 最小値
+const int MAX_VALUE = 9999999;    // 最小値
 
 // 座標計算で使用する配列
 const int dy[5] = {0,-1, 1, 0, 0};
@@ -82,8 +81,6 @@ const int dx[5] = {0, 0, 0,-1, 1};
 const int UNDEFINED = -1;           // 未定
 const int REAL = true;              // 確定コマンド
 const int DANGER_LINE = 50;         // 敵との距離での危険値
-const int MY = 0;                   // 自軍ID
-const int ENEMY = 1;                // 敵軍ID
 bool firstPlayer = false;           // 1P側かどうか
 int attackCount = 0;                // 突撃した回数
 int createLimit = 40;               // 生産に関係する制限
@@ -96,8 +93,6 @@ int mostRightCoordX = UNDEFINED;    // 一番右に探索したx座標
 const char instruction[OPERATION_MAX] = {'X','U','D','L','R','0','1','2','3','4','5','6'};
 // 各ユニットの生産にかかるコスト(上の「ユニット一覧」と一致させておく)
 const int unitCost[UNIT_MAX] = {40, 20, 40, 60, COST_MAX, 100, 500};
-// 各ユニットのHP
-const int unitHp[UNIT_MAX] = {2000, 5000, 5000, 5000, 50000, 20000, 20000};
 // 各ユニットの攻撃範囲
 const int unitAttackRange[UNIT_MAX] = {2, 2, 2, 2, 10, 2, 2};
 // 各ユニットの視野
@@ -2106,8 +2101,6 @@ class Codevs{
       
       if(operation == NO_MOVE){
         return MIN_VALUE;
-      }else if(operation == CREATE_BASE && canBuildBase(unit)){
-        return 10000000;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return myResourceCount - 10000;
@@ -2183,12 +2176,8 @@ class Codevs{
       assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
       Node *node = getNode(unit->y, unit->x);
       int dist = calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
-      int diffY   = abs(unit->y - 99);
-      int diffX   = abs(unit->x - 99);
-      int diffAll = abs(diffY - diffX);
       int rightUpDist = calcManhattanDist(unit->y, unit->x, 0, 99);
       int leftDownDist = calcManhattanDist(unit->y, unit->x, 99, 0);
-      //int bestDirect = getNextDirection(unit);
 
       if(operation == CREATE_BASE && canBuildBase(unit)){
         return 10000000;
@@ -2293,7 +2282,7 @@ class Codevs{
       // 序盤でどれだけワーカーの数を増やすか
       if(operation == CREATE_WORKER && turn <= workerLimit){
         return 100;
-      }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
+      }else if(operation == CREATE_WORKER && gameStage.incomeResource >= 30 && node->myUnitCount[WORKER] == 1){
         return 100;
       }else{
         return 0;
@@ -2310,8 +2299,6 @@ class Codevs{
       int bestUnit = checkAdvantageousUnit(base->y, base->x);
 
       if(isEnemyCastelDetected()){
-        UnitCount aroundEnemyCastelMyUnitCount = aroundMyUnitCount(enemyCastelCoordY, enemyCastelCoordX, 10);
-
         if(operation == CREATE_ASSASIN){
           return 100;
         }else if(operation == bestUnit && currentStageNumber <= 50){
@@ -2398,7 +2385,6 @@ class Codevs{
      * 村破壊モードの評価
      */
     int calcVillageBreakerEvaluation(Unit *breaker, int operation){
-      Node *node = getNode(breaker->y, breaker->x);
       assert(breaker->y >= 0 && breaker->x >= 0 && breaker->destY >= 0 && breaker->destX >= 0);
       int destDist = calcManhattanDist(breaker->y, breaker->x, breaker->destY, breaker->destX);
 
@@ -2412,8 +2398,6 @@ class Codevs{
       Node *node = getNode(unit->y, unit->x);
       Node *castel = getNode(myCastelCoordY, myCastelCoordX);
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
-      int destDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
-      int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
       int penalty = (castel->myUnitTotalCount > 10)? MIN_VALUE : MAX_VALUE;
       int limit = 10;
 
@@ -2441,13 +2425,9 @@ class Codevs{
      */
     int calcLeaderEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      int unitCount = aroundMyUnitCount(unit->y, unit->x, 1).totalCount;
       int stamp = gameStage.field[unit->y][unit->x].stamp;
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
       int targetDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
-      int killCount = (unit->troopsCount > 10)? canKillEnemyCount(unit->y, unit->x, unit->attackRange) : 0;
-      //int bestDirect = (unit->troopsLimit > 10)? getNextDirection(unit) : UNDEFINED;
-      int bestDirect = UNDEFINED;
 
       switch(unit->mode){
         case STAY:
@@ -2469,11 +2449,6 @@ class Codevs{
             int diffY = abs(unit->y - bestCoord.y);
             int diffX = abs(unit->x - bestCoord.x);
             int diffAll = abs(diffY - diffX);
-            int wallDist = calcNearWallDistance(unit->y, unit->x);
-
-            if(bestDirect == operation){
-              return MAX_VALUE;
-            }
 
             return -20 * abs(diff-enemyCastelDist) - 5 * diffAll - node->receiveDamage[unit->type]/10;
           }else if(!gameStage.castelAttack){
@@ -2485,7 +2460,6 @@ class Codevs{
             int diffY = abs(unit->y - gameStage.targetY);
             int diffX = abs(unit->x - gameStage.targetX);
             int diffAll = abs(diffY - diffX);
-            int wallDist = calcNearWallDistance(unit->y, unit->x);
 
             return -4 * targetDist - 2 * diffAll - node->receiveDamage[unit->type]/10;
           }
@@ -5103,7 +5077,7 @@ class CodevsTest{
     cv.createDummyUnit(2, 10, 12, 5000, ASSASIN);
     if(!cv.isKilled(enemy)) return false;
 
-    Unit *enemy2 = cv.createDummyEnemyUnit(3, 10, 10, 2000, WORKER);
+    cv.createDummyEnemyUnit(3, 10, 10, 2000, WORKER);
     if(cv.isKilled(enemy)) return false;
 
     return true;
