@@ -98,6 +98,7 @@ const int ENEMY = 1;                // 敵軍ID
 bool firstPlayer = false;           // 1P側かどうか
 int attackCount = 0;                // 突撃した回数
 int createLimit = 40;               // 生産に関係する制限
+int workerLimit = 28;               // 最初どのターンまで城からワーカを生産するか
 int enemyCastelUnitId = UNDEFINED;  // 敵の城のID
 int mostDownCoordY  = UNDEFINED;    // 一番下に探索したy座標
 int mostRightCoordX = UNDEFINED;    // 一番右に探索したx座標
@@ -167,11 +168,13 @@ struct Cell{
   int y;
   int x;
   int cost;
+  int originDirect;
 
-  Cell(int ypos, int xpos, int c = -1){
+  Cell(int ypos, int xpos, int c = -1, int od = UNDEFINED){
     y = ypos;
     x = xpos;
     cost = c;
+    originDirect = od;
   }
 
   bool operator >(const Cell &e) const{
@@ -333,6 +336,7 @@ set<int> resourceNodeList;      // 資源マスのリスト
 set<int> enemyResourceNodeList; // 敵の資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];      // 壁かどうかを確認するだけのフィールド
+int fieldCost[HEIGHT][WIDTH];       // フィールドのコスト
 int dangerPointList[HEIGHT][WIDTH]; // 危険度
 map<int, bool> unitIdCheckList;     // IDが存在しているかどうかのチェック
 
@@ -455,6 +459,9 @@ class Codevs{
 
       // 生産上限を初期化
       createLimit = (currentStageNumber <= 23)? 40 : 40;
+
+      // ワーカの生産上限を初期化
+      workerLimit = (currentStageNumber <= 23)? 20 : 28;
 
       // 2P側と仮定する
       firstPlayer = false;
@@ -836,6 +843,10 @@ class Codevs{
         enemyCastelCoordY = y;
         enemyCastelCoordX = x;
         enemyCastelUnitId = unitId;
+
+        // 城が見つかったら予測座標は全て廃棄
+        queue<int> que;
+        gameStage.enemyCastelPointList = que;
       }
 
       gameStage.currentEnemyUnitCount[unitType] += 1;
@@ -1168,6 +1179,8 @@ class Codevs{
           return;
         }
 
+        fprintf(stderr,"enemyCastelPointSize = %lu\n", gameStage.enemyCastelPointList.size());
+        assert(gameStage.enemyCastelPointList.size() > 0);
         int id = gameStage.enemyCastelPointList.front();
         assert(id >= 0 && id < 10000);
         int y = id / WIDTH;
@@ -1247,15 +1260,64 @@ class Codevs{
           int nx = cell.x + dx[i];
 
           if(!isWall(ny,nx)){
-            assert(ny >= 0 && nx >= 0 && ny < HEIGHT && nx < WIDTH);
-            int nc = calcManhattanDist(ny, nx, targetY, targetX) + node->stamp + node->cost;
-            que.push(Cell(ny, nx, cell.cost + nc));
+            int cost = node->stamp + node->cost;
+            int dist = calcManhattanDist(ny, nx, targetY, targetX);
+
+            if(cell.cost == 0){
+              que.push(Cell(ny, nx, dist + cell.cost + cost, i));
+            }else{
+              que.push(Cell(ny, nx, dist + cell.cost + cost, cell.originDirect));
+            }
           }
         }
       }
 
       return Coord(UNDEFINED, UNDEFINED);
     };
+
+    /*
+     * 次に行動する方向を決める(なるべく自軍と被らず敵を避けるように)
+     */
+    int getNextDirection(int ypos, int xpos, int destY, int destX){
+      map<int, bool> openNodeList;
+      priority_queue< Cell, vector<Cell>, greater<Cell> > que;
+
+      assert(destY >= 0 && destX >= 0 && destY < HEIGHT && destX < WIDTH);
+
+      que.push(Cell(ypos, xpos, 0));
+
+      while(!que.empty()){
+        Cell cell = que.top(); que.pop();
+
+        if(openNodeList[cell.y*WIDTH+cell.x]) continue;
+        openNodeList[cell.y*WIDTH+cell.x] = true;
+
+        Node *node = getNode(cell.y, cell.x);
+
+        if(cell.y == destY && cell.x == destX){
+          return cell.originDirect;
+        }
+
+        for(int i = 1; i < 5; i++){
+          int ny = cell.y + dy[i];
+          int nx = cell.x + dx[i];
+
+          if(!isWall(ny,nx)){
+            int cost = node->stamp + node->cost + dangerPointList[ny][nx];
+            int dist = calcManhattanDist(ny, nx, destY, destX);
+            int centerDist = calcManhattanDist(ny, nx, 50, 50);
+
+            if(cell.originDirect == UNDEFINED){
+              que.push(Cell(ny, nx, dist - centerDist + cell.cost + cost, i));
+            }else{
+              que.push(Cell(ny, nx, dist - centerDist + cell.cost + cost, cell.originDirect));
+            }
+          }
+        }
+      }
+
+      return NO_MOVE;
+    }
 
     /*
      * ノードの作成を行う
@@ -1436,13 +1498,16 @@ class Codevs{
           updateSeacherDestination(unit);
 
           checkMark(unit->destY, unit->destX);
-          assert(unit->destY >= 0 && unit->destX >= 0);
+          assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
         }else if(unit->mode == RESOURCE_BREAK){
           updateVillageBreakerDestination(unit);
         }
 
         if(unit->mode == SEARCH){
-          assert(unit->destY >= 0 && unit->destX >= 0);
+          assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
+        }
+        if(unit->role == LEADER){
+          updateSeacherDestination(unit);
         }
 
         it++;
@@ -1456,10 +1521,12 @@ class Codevs{
       if(gameStage.gameSituation == ONRUSH){
         seacher->destY = enemyCastelCoordY;
         seacher->destX = enemyCastelCoordX;
+      // 序盤は自分のワーカと被らないように探索を行う
       }else if(gameStage.gameSituation == OPENING){
         Coord coord = directTargetPoint(seacher->y, seacher->x, gameStage.targetY, gameStage.targetX);
         seacher->destY = coord.y;
         seacher->destX = coord.x;
+      // 敵の城が見つかっている場合は敵の城を目指す
       }else if(isEnemyCastelDetected()){
         seacher->destY = enemyCastelCoordY;
         seacher->destX = enemyCastelCoordX;
@@ -1925,7 +1992,7 @@ class Codevs{
         case WORKER:
           switch(unit->mode){
             case SEARCH:
-              assert(unit->destY >= 0 && unit->destX >= 0);
+              assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
               return calcSeacherEvaluation(unit, operation);
               break;
             case PICKING:
@@ -1973,11 +2040,12 @@ class Codevs{
           }else if(unit->role == GUARDIAN){
             return calcGuardianEvaluation(unit, operation);
           }else if(unit->mode == SEARCH){
+            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
             return calcSeacherEvaluation(unit, operation);
           }else if(unit->role == COMBATANT){
             return calcCombatEvaluation(unit, operation);
           }else{
-            assert(unit->destY >= 0 && unit->destX >= 0);
+            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
             return calcSeacherEvaluation(unit, operation);
           }
           break;
@@ -1991,7 +2059,7 @@ class Codevs{
           }else if(unit->mode == RESOURCE_BREAK){
             return calcVillageBreakerEvaluation(unit, operation);
           }else{
-            assert(unit->destY >= 0 && unit->destX >= 0);
+            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
             return calcSeacherEvaluation(unit, operation);
           }
           break;
@@ -2005,9 +2073,10 @@ class Codevs{
           }else if(unit->mode == RESOURCE_BREAK){
             return calcVillageBreakerEvaluation(unit, operation);
           }else if(unit->mode == SEARCH){
+            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
             return calcSeacherEvaluation(unit, operation);
           }else{
-            assert(unit->destY >= 0 && unit->destX >= 0);
+            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
             return calcSeacherEvaluation(unit, operation);
           }
           break;
@@ -2327,7 +2396,7 @@ class Codevs{
       Node *node = getNode(castel->y, castel->x);
 
       // 序盤でどれだけワーカーの数を増やすか
-      if(operation == CREATE_WORKER && turn <= 28){
+      if(operation == CREATE_WORKER && turn <= workerLimit){
         return 100;
       }else if(operation == CREATE_WORKER && gameStage.gameSituation == DANGER && node->myUnitCount[WORKER] == 1){
         return 100;
@@ -2494,6 +2563,8 @@ class Codevs{
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
       int targetDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
       int killCount = (unit->troopsCount > 10)? canKillEnemyCount(unit->y, unit->x, unit->attackRange) : 0;
+      //int bestDirect = (unit->troopsLimit > 10)? getNextDirection(unit->y, unit->x, unit->destY, unit->destX) : UNDEFINED;
+      int bestDirect = UNDEFINED;
 
       switch(unit->mode){
         case STAY:
@@ -2525,6 +2596,10 @@ class Codevs{
 
             if(isLila() && !isEnemyCastelSpy() && enemyCastelDist > 11){
               diff = 12;
+            }
+
+            if(bestDirect == operation){
+              return MAX_VALUE;
             }
 
             if(isGrun()){
@@ -5079,8 +5154,8 @@ class CodevsTest{
   bool testCase36(){
     cv.stageInitialize();
 
-    Unit *leader1 = cv.createDummyUnit(0, 10, 10, 5000, ASSASIN);
-    Unit *leader2 = cv.createDummyUnit(1, 80, 80, 5000, ASSASIN);
+    cv.createDummyUnit(0, 10, 10, 5000, ASSASIN);
+    cv.createDummyUnit(1, 80, 80, 5000, ASSASIN);
 
     Unit *combat = cv.createDummyUnit(2, 80, 80, 5000, ASSASIN);
 
@@ -5575,9 +5650,9 @@ class CodevsTest{
     cv.stageInitialize();
 
     Unit *assasin1 = cv.createDummyUnit(0, 10, 10, 5000, ASSASIN);
-    Unit *assasin2 = cv.createDummyUnit(1, 20, 10, 5000, ASSASIN);
-    Unit *assasin3 = cv.createDummyUnit(2, 80, 80, 5000, ASSASIN);
-    Unit *base     = cv.createDummyUnit(3, 11, 11, 20000, BASE);
+    cv.createDummyUnit(1, 20, 10, 5000, ASSASIN);
+    cv.createDummyUnit(2, 80, 80, 5000, ASSASIN);
+    cv.createDummyUnit(3, 11, 11, 20000, BASE);
 
     int newLeaderId = cv.searchNextLeader(assasin1);
 
