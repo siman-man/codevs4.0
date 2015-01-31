@@ -533,14 +533,8 @@ class Codevs{
       for(int i = 0; i < myAllUnitCount; i++){
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
-        // 自軍の城の座標を更新
-        if(unitType == CASTEL){
-          myCastelCoordY = y;
-          myCastelCoordX = x;
-        }
 
-
-        firstPlayer = isFirstPlayer();
+        firstPlayer = isFirstPlayer(unitId);
         if(turn == 0 && unitType == CASTEL){
           if(firstPlayer){
             fprintf(stderr,"stage = %d, first player!\n", currentStageNumber);
@@ -548,8 +542,14 @@ class Codevs{
             fprintf(stderr,"stage = %d, second player!\n", currentStageNumber);
           }
         }
+
         coord = reverseCoord(y,x);
 
+        // 自軍の城の座標を更新
+        if(unitType == CASTEL){
+          myCastelCoordY = coord.y;
+          myCastelCoordX = coord.x;
+        }
 
         // チェックリストに載っていない場合は、新しくユニットのデータを生成する
         if(!unitIdCheckList[unitId]){
@@ -985,7 +985,7 @@ class Codevs{
     /*
      * 突撃する人数を変える
      */ 
-    void updateTroopsLimit(Unit *unit, bool check = true){
+    void updateTroopsLimit(Unit *unit){
       // 城が見つかっている場合
       if(isEnemyCastelDetected()){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
@@ -1004,7 +1004,7 @@ class Codevs{
      */
     int directFirstMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
-      updateTroopsLimit(unit, false);
+      updateTroopsLimit(unit);
 
       switch(unit->type){
         case WORKER:
@@ -1016,8 +1016,8 @@ class Codevs{
 
             return PICKING;
           }else if(unit->id == 1 || unit->id == 2){
-          //}else if(unit->id == 1){
-          //}else if(unit->birthday == 5 || unit->birthday == 9){
+            return SPY;
+          }else if(unit->id == 7 || unit->id == 8){
             return SPY;
           }else{
             return SEARCH;
@@ -1726,6 +1726,7 @@ class Codevs{
         }
       // ワーカで試合終盤で城に生成されたユニットは王様とする
       }else if(unit->type == WORKER && unit->y == myCastelCoordY && unit->x == myCastelCoordX && turn > 50){
+        fprintf(stderr,"Create King\n");
         return KING;
       // 城の上に立てられた拠点は、作戦本部とする
       }else if(unit->type == BASE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
@@ -2215,13 +2216,13 @@ class Codevs{
         return MIN_VALUE;
       }else{
         if(myCastelCoordY < myCastelCoordX){
-          if(unit->id == 1){
+          if(unit->id == 1 || unit->id == 7){
             return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
           }else{
             return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
           }
         }else{
-          if(unit->id == 1){
+          if(unit->id == 1 || unit->id == 7){
             return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
           }else{
             return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
@@ -3843,9 +3844,9 @@ class Codevs{
     /*
      * 1P側のプレイヤかどうかの確認
      */
-    bool isFirstPlayer(){
-      assert(myCastelCoordY >= 0 && myCastelCoordX >= 0);
-      return (calcManhattanDist(0, 0, myCastelCoordY, myCastelCoordX) <= 40);
+    bool isFirstPlayer(int unitId){
+      return (unitId == 0);
+      //return (calcManhattanDist(0, 0, myCastelCoordY, myCastelCoordX) <= 40);
     }
 
     /*
@@ -5393,10 +5394,10 @@ class CodevsTest{
     cv.stageInitialize();
 
     cv.createDummyUnit(0, 10, 10, 50000, CASTEL); 
-    if(!cv.isFirstPlayer()) return false;
+    if(!cv.isFirstPlayer(0)) return false;
 
     cv.createDummyUnit(0, 90, 90, 50000, CASTEL); 
-    if(cv.isFirstPlayer()) return false;
+    if(cv.isFirstPlayer(6)) return false;
 
     return true;
   }
