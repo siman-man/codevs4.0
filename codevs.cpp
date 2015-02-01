@@ -512,8 +512,10 @@ class Codevs{
         scanf("%d %d %d %d %d", &unitId, &y, &x, &hp, &unitType);
 
 
-        firstPlayer = isFirstPlayer(unitId);
+
         if(turn == 0 && unitType == CASTEL){
+          firstPlayer = isFirstPlayer(unitId);
+
           if(firstPlayer){
             fprintf(stderr,"stage = %d, first player!\n", currentStageNumber);
           }else{
@@ -3300,7 +3302,6 @@ class Codevs{
         Operation ope = operationList[i];
         cout << ope.unitId << " " << instruction[reverseOperation(ope.operation)] << endl;
       }
-      cout.flush();
     }
 
     /*
@@ -5308,11 +5309,10 @@ class CodevsTest{
 
 int main(){
   Codevs cv;
-  //CodevsTest cvt;
-  fprintf(stderr,"Game Start!\n");
+  CodevsTest cvt;
 
   cv.run();
-  //cvt.runTest();
+  cvt.runTest();
 
   return 0;
 }
