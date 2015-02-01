@@ -1,4 +1,4 @@
-@filename = "codevs"
+@filename = "SampleAI"
 
 task :default do
   system("g++ -Wall -O2 -o codevs #{@filename}.cpp")
