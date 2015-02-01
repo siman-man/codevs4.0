@@ -349,6 +349,7 @@ class Codevs{
 
       // 一番最初でプレイヤー名の出力
       printf("%s\n", PLAYER_NAME.c_str());
+      cout.flush();
     }
 
     /*
@@ -438,9 +439,6 @@ class Codevs{
 
       // 生産上限を初期化
       createLimit = (currentStageNumber <= 23)? 40 : 40;
-
-      // ワーカの生産上限を初期化
-      workerLimit = (currentStageNumber <= 23)? 20 : 28;
 
       // 2P側と仮定する
       firstPlayer = false;
@@ -2282,6 +2280,7 @@ class Codevs{
       // 序盤でどれだけワーカーの数を増やすか
       if(operation == CREATE_WORKER && turn <= workerLimit){
         return 100;
+      // 城の上に拠点を作成するためのワーカを生産
       }else if(operation == CREATE_WORKER && gameStage.incomeResource >= 30 && node->myUnitCount[WORKER] == 1){
         return 100;
       }else{
@@ -3298,9 +3297,11 @@ class Codevs{
       int size = operationList.size();
 
       printf("%d\n", size);
+      cout.flush();
       for(int i = 0; i < size; i++){
         Operation ope = operationList[i];
         printf("%d %c\n", ope.unitId, instruction[reverseOperation(ope.operation)]);
+        cout.flush();
       }
     }
 
