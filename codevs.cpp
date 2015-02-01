@@ -213,6 +213,7 @@ struct Node{
   int seenCount;                        // ノードを監視しているユニットの数 
   int troopsId;                         // 滞在中の軍隊ID
   int myUnitTotalCount;                 // 自軍の総数
+  int targetCount;                      // このノードを目的地にしているユニットの数
   int myUnitCount[7];                   // 自軍の各ユニット数
   int enemyUnitTotalCount;              // 敵軍の総数
   int enemyUnitCount[7];                // 相手の各ユニット数
@@ -270,10 +271,10 @@ struct GameStage{
   int targetY;                          // 目的地
   int targetX;                          // 目的地
   int killedCount;                      // 倒された味方の数
-  int currentEnemyUnitCount[UNIT_MAX];  // 遭遇した敵の数
   int baseCount;                        // 拠点の数
   int createVillageCount;               // このターンに立てた村の数
   bool castelAttack;                    // 城からの攻撃を受けている
+  int currentEnemyUnitCount[UNIT_MAX];  // 敵の全体の数
   Node field[HEIGHT][WIDTH];            // ゲームフィールド
   queue<int> enemyCastelPointList;      // 敵の城の座標候補
 };
@@ -320,7 +321,7 @@ set<int> enemyResourceNodeList; // 敵の資源マスのリスト
 
 bool walls[HEIGHT+2][WIDTH+2];      // 壁かどうかを確認するだけのフィールド
 int fieldCost[HEIGHT][WIDTH];       // フィールドのコスト
-int dangerPointList[HEIGHT][WIDTH]; // 危険度
+int dangerPointList[UNIT_MAX][HEIGHT][WIDTH]; // 危険度
 map<int, bool> unitIdCheckList;     // IDが存在しているかどうかのチェック
 
 GameStage gameStage;      // ゲームフィールド
@@ -657,6 +658,13 @@ class Codevs{
     }
 
     /*
+     * 目的地を持っているかどうかのチェック
+     */
+    bool haveDest(Unit *unit){
+      return (unit->destY != UNDEFINED && unit->destX != UNDEFINED);
+    }
+
+    /*
      * 自軍のユニットを削除する
      *   unit: ユニット情報
      */
@@ -669,6 +677,11 @@ class Codevs{
         gameStage.baseCount -= 1;
       }
       if(unit->role == LEADER && unit->troopsLimit > 1){
+        if(unit->mode == RESOURCE_BREAK && haveDest(unit)){
+          Node *targetNode = getNode(unit->destY, unit->destX);
+          targetNode->targetCount -= 1;
+        }
+
         switchLeader(unit);
       }
       if(unit->role == COMBATANT){
@@ -686,7 +699,7 @@ class Codevs{
       set<int>::iterator id = myActiveUnitList.begin();
       int newLeaderId = searchNextLeader(leader);
 
-      assert(newLeaderId >= 0);
+      assert(newLeaderId >= 0 && newLeaderId <= 20000);
 
       while(id != myActiveUnitList.end()){
         assert(*id >= 0 && *id <= 20000);
@@ -774,7 +787,7 @@ class Codevs{
         it++;
       }
 
-      return 10 + rockOnCount * 5 >= createLimit;
+      return 10 + rockOnCount * 5 > createLimit;
     }
 
     /*
@@ -847,6 +860,10 @@ class Codevs{
     bool isOccupied(int y, int x){
       assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
       Node *node = getNode(y, x);
+
+      if(node->myUnitCount[WORKER] == 5) return false;
+      if(node->myUnitCount[VILLAGE] == 1) return false;
+
       return (node->timestamp == turn && node->resource && (node->enemyUnitCount[WORKER] > 0 || node->enemyUnitCount[VILLAGE] > 0));
     }
 
@@ -861,9 +878,13 @@ class Codevs{
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
+        Node *node = getNode(y,x);
+
         // 占領されていたら敵の資源マス
         if(isOccupied(y,x)){
           enemyResourceNodeList.insert(y*WIDTH+x);
+        }else if(node->timestamp == turn){
+          enemyResourceNodeList.erase(y*WIDTH+x);
         }
 
         it++;
@@ -1235,7 +1256,7 @@ class Codevs{
           int nx = cell.x + dx[i];
 
           if(!isWall(ny,nx)){
-            int cost = node->stamp + node->cost + dangerPointList[ny][nx];
+            int cost = node->stamp + node->cost + dangerPointList[unit->type][ny][nx];
             int dist = calcManhattanDist(ny, nx, destY, destX);
             int centerDist = calcManhattanDist(ny, nx, 50, 50);
 
@@ -1252,7 +1273,7 @@ class Codevs{
     }
 
     /*
-     * ノードの作成を行う
+     * ノードの作成を行う(値の初期化)
      */
     Node createNode(){
       Node node;
@@ -1269,6 +1290,7 @@ class Codevs{
       node.enemyK               = 0;
       node.myUnitTotalCount     = 0;
       node.rockCount            = 0;
+      node.targetCount          = 0;
       node.enemyUnitTotalCount  = 0;
       node.markCount            = 0;
       node.timestamp            = 0;
@@ -1498,10 +1520,22 @@ class Codevs{
 
       // 相手の占領している資源マスを発見した
       if(coord.y != UNDEFINED && coord.x != UNDEFINED){
+        Node *node = getNode(coord.y, coord.x);
+
         // 目的地が決まっていない場合は新しく設定
         if(breaker->destY == UNDEFINED && breaker->destX == UNDEFINED){
+          fprintf(stderr,"set new village coord! y = %d, x = %d\n", coord.y, coord.x);
           breaker->destY = coord.y;
           breaker->destX = coord.x;
+          node->targetCount += 1;
+        }else if(!isOccupied(breaker->destY, breaker->destX)){
+          Node *oldNode = getNode(breaker->destY, breaker->destX);
+
+          fprintf(stderr,"set new village coord! y = %d, x = %d\n", coord.y, coord.x);
+          breaker->destY = coord.y;
+          breaker->destX = coord.x;
+          oldNode->targetCount -= 1;
+          node->targetCount += 1;
         }
       }else{
         assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
@@ -2070,6 +2104,28 @@ class Codevs{
     }
 
     /*
+     * このゲーム全体で有効なユニットの判断を行う
+     */
+    int checkCurrentBestUnit(){
+      int bestUnit = UNDEFINED;
+      int assasinCount = gameStage.currentEnemyUnitCount[ASSASIN];
+      int fighterCount = gameStage.currentEnemyUnitCount[FIGHTER]/2;
+      int knightCount = gameStage.currentEnemyUnitCount[KNIGHT]/3;
+
+      if(fighterCount > assasinCount + knightCount){
+        bestUnit = CREATE_ASSASIN;
+      }else if(knightCount > assasinCount){
+        bestUnit = CREATE_FIGHTER;
+      }else if(assasinCount > fighterCount + knightCount){
+        bestUnit = KNIGHT;
+      }else{
+        bestUnit = ASSASIN;
+      }
+
+      return bestUnit;
+    }
+
+    /*
      * 拠点周りの敵ユニットを見て有利なユニットの生成を行う
      */
     int checkAdvantageousUnit(int ypos, int xpos, int range = 10){
@@ -2170,8 +2226,7 @@ class Codevs{
             }else if(unit->y == unit->beforeY && unit->x == unit->beforeX){
               return MIN_VALUE;
             }else{
-              int dangerPoint = dangerPointList[unit->y][unit->x];
-              //int dangerPoint = (calcDangerPoint(unit->y, unit->x, 3) >= 3)? 100 : 0;
+              int dangerPoint = dangerPointList[unit->type][unit->y][unit->x];
 
               return 50 * myResourceCount + 4 * gameStage.openedNodeCount - 10 * destDist - 2 * stamp - node->cost - (node->receiveDamage[unit->type])/10 + 10 * topLeftDist - 2 * dangerPoint;
             }
@@ -2217,15 +2272,15 @@ class Codevs{
       }else{
         if(myCastelCoordY < myCastelCoordX){
           if(unit->id == 1 || unit->id == 7){
-            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
           }else{
-            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
           }
         }else{
           if(unit->id == 1 || unit->id == 7){
-            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->y][unit->x];
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
           }else{
-            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->y][unit->x];
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
           }
         }
       }
@@ -2357,7 +2412,7 @@ class Codevs{
 
       int myUnitCount = aroundMyUnitCount(ghq->y, ghq->x, 10).totalCount;
       int enemyUnitCount = aroundEnemyUnitCount(ghq->y, ghq->x, 10).totalCount;
-      int bestUnit = checkAdvantageousUnit(ghq->y, ghq->x);
+      int bestUnit = (enemyUnitCount > 10)? checkAdvantageousUnit(ghq->y, ghq->x) : checkCurrentBestUnit();
       Node *node = getNode(ghq->y, ghq->x);
 
       if((myUnitCount < enemyUnitCount+50) && operation == bestUnit){
@@ -2411,10 +2466,14 @@ class Codevs{
      * 村破壊モードの評価
      */
     int calcVillageBreakerEvaluation(Unit *breaker, int operation){
-      assert(breaker->y >= 0 && breaker->x >= 0 && breaker->destY >= 0 && breaker->destX >= 0);
+      assert(breaker->destY >= 0 && breaker->destX >= 0 && breaker->destY < HEIGHT && breaker->destX < WIDTH);
       int destDist = calcManhattanDist(breaker->y, breaker->x, breaker->destY, breaker->destX);
+      int diffY   = abs(breaker->y - breaker->destY);
+      int diffX   = abs(breaker->x - breaker->destX);
+      int diffAll = abs(diffY - diffX);
+      int dangerPoint = dangerPointList[breaker->type][breaker->y][breaker->x];
 
-      return (100 - destDist);
+      return (100 - 2 * destDist - diffAll - dangerPoint);
     }
 
     /*
@@ -2799,38 +2858,6 @@ class Codevs{
     }
 
     /*
-     * 危険度を計算する
-     */
-    int calcDangerPoint(int ypos, int xpos, int eyeRange, bool spy = false){
-      int dangerPoint = 0;
-
-      assert(ypos >= 0 && xpos >= 0);
-      set<int>::iterator it = enemyActiveUnitList.begin();
-
-      while(it != enemyActiveUnitList.end()){
-        assert(*it >= 0);
-        Unit *enemy = getUnit(*it);
-        int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
-
-        if(dist <= eyeRange){
-          if(enemy->type == ASSASIN){
-            dangerPoint += 3;
-          }else if(enemy->type == FIGHTER){
-            dangerPoint += 2;
-          }else if(enemy->type == KNIGHT){
-            dangerPoint += 1;
-          }else if(spy){
-            dangerPoint += 1;
-          }
-        }
-
-        it++;
-      }
-
-      return dangerPoint;
-    }
-
-    /*
      * 危険度を更新
      */
     void updateDangerPoint(){
@@ -2843,13 +2870,19 @@ class Codevs{
 
         if(enemy->timestamp == turn){
           if(enemy->type == ASSASIN){
-            addDangerPoint(enemy->y, enemy->x, 3, 3); 
+            addDangerPoint(enemy->y, enemy->x, WORKER, 3, 3); 
+            addDangerPoint(enemy->y, enemy->x, FIGHTER, 4, 5); 
           }else if(enemy->type == FIGHTER){
-            addDangerPoint(enemy->y, enemy->x, 3, 2); 
-          }else if(enemy->type == FIGHTER){
-            addDangerPoint(enemy->y, enemy->x, 3, 1); 
+            addDangerPoint(enemy->y, enemy->x, WORKER, 3, 3); 
+            addDangerPoint(enemy->y, enemy->x, KNIGHT, 4, 5); 
+            addDangerPoint(enemy->y, enemy->x, ASSASIN, 3, -1); 
+          }else if(enemy->type == KNIGHT){
+            addDangerPoint(enemy->y, enemy->x, WORKER, 3, 1); 
+            addDangerPoint(enemy->y, enemy->x, FIGHTER, 3, -2); 
+            addDangerPoint(enemy->y, enemy->x, ASSASIN, 3, 1); 
           }else if(enemy->type == WORKER){
-            addDangerPoint(enemy->y, enemy->x, 2, 1); 
+            addDangerPoint(enemy->y, enemy->x, ASSASIN, 2, -2); 
+            addDangerPoint(enemy->y, enemy->x, WORKER, 2, 1); 
           }
         }
 
@@ -2859,8 +2892,13 @@ class Codevs{
 
     /*
      * 危険度を加算する
+     *       ypos: 基準となるy座標
+     *       xpos: 基準となるx座標
+     *   unitType: 対象となるユニットのタイプ
+     *      range: 危険度を更新する範囲
+     *      point: 危険度
      */
-    void addDangerPoint(int ypos, int xpos, int range, int point){
+    void addDangerPoint(int ypos, int xpos, int unitType, int range, int point){
       map<int, bool> checkList;
       queue<cell> que;
       que.push(cell(Coord(ypos, xpos), 0));
@@ -2873,7 +2911,7 @@ class Codevs{
         if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
         checkList[coord.y*WIDTH+coord.x] = true;
 
-        dangerPointList[coord.y][coord.x] += point;
+        dangerPointList[unitType][coord.y][coord.x] += point;
 
         for(int i = 1; i < 5; i++){
           int ny = coord.y + dy[i];
