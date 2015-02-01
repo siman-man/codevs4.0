@@ -3300,6 +3300,7 @@ class Codevs{
         Operation ope = operationList[i];
         cout << ope.unitId << " " << instruction[reverseOperation(ope.operation)] << endl;
       }
+      cout.flush();
     }
 
     /*
@@ -5307,10 +5308,11 @@ class CodevsTest{
 
 int main(){
   Codevs cv;
-  CodevsTest cvt;
+  //CodevsTest cvt;
+  fprintf(stderr,"Game Start!\n");
 
   cv.run();
-  cvt.runTest();
+  //cvt.runTest();
 
   return 0;
 }
