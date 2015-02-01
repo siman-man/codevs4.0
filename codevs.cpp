@@ -2253,7 +2253,7 @@ class Codevs{
 
       if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && myResourceCount > 600){
         return 100;
-      }else if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && myResourceCount >= 800 && gameStage.gameSituation == DANGER){
+      }else if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && myResourceCount >= 800){
         return 100;
       }else if(operation == NO_MOVE){
         return 10;
@@ -2266,7 +2266,7 @@ class Codevs{
      * SPY状態の評価値
      */
     int calcSpyEvaluation(Unit *unit, int operation){
-      assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
+      assert(!isWall(unit->destY, unit->destX));
       Node *node = getNode(unit->y, unit->x);
       int dist = calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
       int rightUpDist = calcManhattanDist(unit->y, unit->x, 0, 99);
@@ -2335,7 +2335,7 @@ class Codevs{
           int diffY   = abs(unit->y - unit->resourceY);
           int diffX   = abs(unit->x - unit->resourceX);
           int diffAll = abs(diffY - diffX);
-          assert(unit->resourceY >= 0 && unit->resourceX >= 0 && unit->resourceY < HEIGHT && unit->resourceX < WIDTH);
+          assert(!isWall(unit->resourceY, unit->resourceX));
           return -4 * calcManhattanDist(unit->y, unit->x, unit->resourceY, unit->resourceX) - 2 * diffAll;
         }
       }
@@ -2494,7 +2494,7 @@ class Codevs{
      */
     int calcGuardianEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
+      assert(!isWall(gameStage.targetY, gameStage.targetX));
       assert(!isWall(myCastelCoordY, myCastelCoordX));
       int penalty = (node->myUnitTotalCount > 10)? MIN_VALUE : MAX_VALUE;
 
@@ -2553,9 +2553,8 @@ class Codevs{
           if(gameStage.gameSituation == ONRUSH){
             return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
           }else if(gameStage.field[unit->y][unit->x].myUnitCount[unit->type] <= 4){
+            assert(!isWall(unit->destY, unit->destX));
             return -1 * calcManhattanDist(unit->y, unit->x, unit->destY, unit->destX);
-          }else if(gameStage.gameSituation == ONRUSH){
-            return -1 * calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
           }else{
             return -1 * calcManhattanDist(unit->y, unit->x, 0, 0);
           }
@@ -2579,13 +2578,12 @@ class Codevs{
 
       switch(unit->mode){
         case STAY:
-          assert(leader->y >= 0 && leader->x >= 0);
+          assert(!isWall(leader->y, leader->x));
           if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= limit){
             return -100 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x) + penalty;
           }else{
             return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] + penalty;
           }
-          break;
         case DESTROY:
           return value;
           if(isEnemyCastelDetected()){
@@ -2601,17 +2599,8 @@ class Codevs{
           }else{
             return value;
           }
-          break;
         case SEARCH:
-          int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
-          if(enemyCastelDist <= 2){
-            return (100 - enemyCastelDist) + penalty;
-          }else if(leaderDist > 2){
-            return (100 - leaderDist);
-          }else{
-            return value;
-          }
-          break;
+          return value;
       }
 
       return -1000;
@@ -2635,7 +2624,7 @@ class Codevs{
       while(it != enemyActiveUnitList.end()){
         Unit *enemy = getUnit(*it);
 
-        assert(enemy->y >= 0 && enemy->x >= 0 && enemy->y < HEIGHT && enemy->x < WIDTH);
+        assert(!isWall(enemy->y, enemy->x));
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
         if(dist <= attackRange){
           killCount += (int)isKilled(enemy);
@@ -2698,7 +2687,7 @@ class Codevs{
         Unit *other = getUnit(*it);
 
         if(unit->id != other->id && other->movable){
-          assert(other->y >= 0 && other->x >= 0 && other->y < HEIGHT && other->x < WIDTH);
+          assert(!isWall(other->y, other->x));
           int dist = calcManhattanDist(unit->y, unit->x, other->y, other->x);
 
           if(minDist > dist){
@@ -2852,13 +2841,14 @@ class Codevs{
     bool isSafePoint(int ypos, int xpos, int eyeRange, int safeLine = 0){
       int enemyCount = 0;
 
-      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
+      assert(!isWall(ypos, xpos));
 
       set<int>::iterator id = enemyActiveUnitList.begin();
 
       while(id != enemyActiveUnitList.end()){
         assert(*id >= 0 && *id <= 20000);
         Unit *enemy = getUnit(*id);
+        assert(!isWall(enemy->y, enemy->x));
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
 
         if(dist <= eyeRange && enemy->type != WORKER && enemy->type != VILLAGE){
@@ -2972,6 +2962,7 @@ class Codevs{
 
       while(id != enemyActiveUnitList.end()){
         Unit *enemy = getUnit(*id);
+        assert(!isWall(enemy->y, enemy->x));
         int dist = calcManhattanDist(unit->y, unit->x, enemy->y, enemy->x);
 
         if(dist <= unitAttackRange[enemy->type]){
@@ -3001,6 +2992,7 @@ class Codevs{
 
       while(id != enemyActiveUnitList.end()){
         Unit *enemy = getUnit(*id);
+        assert(!isWall(enemy->y, enemy->x));
         int dist = calcManhattanDist(ypos, xpos, enemy->y, enemy->x);
 
         if(dist <= unitAttackRange[enemy->type]){
@@ -3029,6 +3021,7 @@ class Codevs{
 
       while(id != myActiveUnitList.end()){
         Unit *unit = getUnit(*id);
+        assert(!isWall(unit->y, unit->x));
         int dist = calcManhattanDist(enemy->y, enemy->x, unit->y, unit->x);
 
         if(dist <= unitAttackRange[unit->type]){
@@ -3885,7 +3878,7 @@ class Codevs{
     bool isEnemyCastelSpy(){
       assert(isEnemyCastelDetected());
       set<int>::iterator id = myActiveUnitList.begin();
-      assert(enemyCastelCoordY >= 0 && enemyCastelCoordX >= 0 && enemyCastelCoordY < HEIGHT && enemyCastelCoordX < WIDTH);
+      assert(isEnemyCastelDetected());
 
       while(id != myActiveUnitList.end()){
         assert(*id >= 0 && *id <= 20000);
