@@ -858,7 +858,7 @@ class Codevs{
      * いずれかを満たす場合は占領されていると判断
      */
     bool isOccupied(int y, int x){
-      assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
+      assert(!isWall(y,x));
       Node *node = getNode(y, x);
 
       if(node->myUnitCount[WORKER] == 5) return false;
@@ -882,10 +882,11 @@ class Codevs{
 
         // 占領されていたら敵の資源マス
         if(isOccupied(y,x)){
+          fprintf(stderr,"turn = %d, Occupied Resource Node\n", turn);
           enemyResourceNodeList.insert(y*WIDTH+x);
         }else if(node->timestamp == turn){
-          node->targetCount = 0;
-          enemyResourceNodeList.erase(y*WIDTH+x);
+          //node->targetCount = 0;
+          //enemyResourceNodeList.erase(y*WIDTH+x);
         }
 
         it++;
@@ -900,9 +901,10 @@ class Codevs{
     Coord searchEnemyOccupiedResourceNode(int ypos, int xpos){
       Coord coord;
       int minDist = MAX_VALUE;
+      int minTargetCount = MAX_VALUE;
       int dist;
 
-      assert(ypos >= 0 && xpos >= 0 && ypos < HEIGHT && xpos < WIDTH);
+      assert(!isWall(ypos, xpos));
 
       set<int>::iterator it = enemyResourceNodeList.begin();
 
@@ -916,10 +918,11 @@ class Codevs{
         assert(!isWall(y,x));
         dist = calcManhattanDist(ypos, xpos, y, x);
 
-        if(minDist > dist && node->targetCount == 0){
-          minDist = dist;
-          coord.y = y;
-          coord.x = x;
+        if(minDist >= dist && node->targetCount > minTargetCount){
+          minDist         = dist;
+          minTargetCount  = node->targetCount;
+          coord.y         = y;
+          coord.x         = x;
         }
 
         it++;
@@ -1426,8 +1429,10 @@ class Codevs{
         assert(*id >= 0 && *id <= 20000);
         Unit *unit = getUnit(*id);
         unit->mode = directUnitMode(unit);
+        int battleUnitCount = countBattleUnit(unit->y, unit->x);
 
-        if(unit->role == GUARDIAN && aroundMyCastelUnitCount - aroundMyCastelEnemyCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+        if(unit->role == GUARDIAN && gameStage.gameSituation != DANGER && battleUnitCount >= 3 && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+        //if(unit->role == GUARDIAN && aroundMyCastelUnitCount - aroundMyCastelEnemyCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
           createNewPlatoon(unit, RESOURCE_BREAK);
         }
 
@@ -1544,7 +1549,7 @@ class Codevs{
 
         assert(breaker->destY >= 0 && breaker->destX >= 0 && breaker->destY < HEIGHT && breaker->destX < WIDTH);
       }else{
-        assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
+        assert(!isWall(gameStage.targetY, gameStage.targetX));
         breaker->destY = gameStage.targetY;
         breaker->destX = gameStage.targetX;
       }
@@ -2254,7 +2259,7 @@ class Codevs{
       if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && myResourceCount > 600){
         return 100;
       }else if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && myResourceCount >= 800){
-        return 100;
+        return 150;
       }else if(operation == NO_MOVE){
         return 10;
       }else{
@@ -2485,8 +2490,15 @@ class Codevs{
       int diffX   = abs(breaker->x - breaker->destX);
       int diffAll = abs(diffY - diffX);
       int dangerPoint = dangerPointList[breaker->type][breaker->y][breaker->x];
+      int topLeftDist = calcManhattanDist(breaker->y, breaker->x, 0, 0);
+      Node *node = getNode(breaker->y, breaker->x);
+      fprintf(stderr,"turn = %d, destY = %d, destX = %d\n", turn, breaker->destY, breaker->destX);
 
-      return (100 - 2 * destDist - diffAll - dangerPoint);
+      if(breaker->destY == gameStage.targetY && breaker->destX == gameStage.targetX){
+        return 4 * gameStage.openedNodeCount - 2 * destDist - 2 * node->stamp - node->cost + 10 * topLeftDist - 2 * dangerPoint;
+      }else{
+        return (100 - 2 * destDist - diffAll - dangerPoint);
+      }
     }
 
     /*
@@ -2878,11 +2890,11 @@ class Codevs{
             addDangerPoint(enemy->y, enemy->x, FIGHTER, 4, 5); 
           }else if(enemy->type == FIGHTER){
             addDangerPoint(enemy->y, enemy->x, WORKER, 3, 3); 
-            addDangerPoint(enemy->y, enemy->x, KNIGHT, 4, 5); 
+            addDangerPoint(enemy->y, enemy->x, KNIGHT, 4, 10); 
             addDangerPoint(enemy->y, enemy->x, ASSASIN, 3, -1); 
           }else if(enemy->type == KNIGHT){
             addDangerPoint(enemy->y, enemy->x, WORKER, 3, 1); 
-            addDangerPoint(enemy->y, enemy->x, FIGHTER, 3, -2); 
+            addDangerPoint(enemy->y, enemy->x, FIGHTER, 3, -3); 
             addDangerPoint(enemy->y, enemy->x, ASSASIN, 3, 1); 
           }else if(enemy->type == WORKER){
             addDangerPoint(enemy->y, enemy->x, ASSASIN, 2, -2); 
