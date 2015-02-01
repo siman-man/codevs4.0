@@ -348,7 +348,7 @@ class Codevs{
       }
 
       // 一番最初でプレイヤー名の出力
-      printf("%s\n", PLAYER_NAME.c_str());
+      cout << PLAYER_NAME << endl;
       cout.flush();
     }
 
@@ -2010,7 +2010,6 @@ class Codevs{
       if(gameStage.gameSituation != DANGER && gameStage.baseCount != 0) return false;
 
       if(!isSafePoint(unit->y, unit->x, 2)) return false;
-      if(wallDist < 15 && myResourceCount <= 1800) return false;
       if(rightDownDist > 60 && myResourceCount <= 1800) return false;
 
       if(isEnemyCastelDetected()){
@@ -3296,12 +3295,10 @@ class Codevs{
     void finalOperation(vector<Operation> &operationList){
       int size = operationList.size();
 
-      printf("%d\n", size);
-      cout.flush();
+      cout << size << endl;
       for(int i = 0; i < size; i++){
         Operation ope = operationList[i];
-        printf("%d %c\n", ope.unitId, instruction[reverseOperation(ope.operation)]);
-        cout.flush();
+        cout << ope.unitId << " " << instruction[reverseOperation(ope.operation)] << endl;
       }
     }
 
