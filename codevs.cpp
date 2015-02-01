@@ -81,6 +81,7 @@ const int dx[5] = {0, 0, 0,-1, 1};
 const int UNDEFINED = -1;           // 未定
 const int REAL = true;              // 確定コマンド
 const int DANGER_LINE = 50;         // 敵との距離での危険値
+const int SAFETY_LINE = 30;         // 自軍の城の周りにこれだけ居れば大丈夫というライン
 bool firstPlayer = false;           // 1P側かどうか
 int attackCount = 0;                // 突撃した回数
 int createLimit = 40;               // 生産に関係する制限
@@ -438,7 +439,7 @@ class Codevs{
       gameStage.openedNodeCount = 0;
 
       // 生産上限を初期化
-      createLimit = (currentStageNumber <= 23)? 40 : 40;
+      createLimit = 40;
 
       // 2P側と仮定する
       firstPlayer = false;
@@ -496,10 +497,6 @@ class Codevs{
 
       // 現在のターン数(0-index)
       scanf("%d", &turn);
-
-      if(currentStageNumber == 40 && turn % 20 == 0){
-        fprintf(stderr,"totalTurn = %d\n", totalTurn + turn);
-      }
 
       // 資源数
       scanf("%d", &myResourceCount);
@@ -850,7 +847,7 @@ class Codevs{
     bool isOccupied(int y, int x){
       assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
       Node *node = getNode(y, x);
-      return (node->resource && (node->enemyUnitCount[WORKER] > 0 || node->enemyUnitCount[VILLAGE] > 0));
+      return (node->timestamp == turn && node->resource && (node->enemyUnitCount[WORKER] > 0 || node->enemyUnitCount[VILLAGE] > 0));
     }
 
     /*
@@ -867,8 +864,6 @@ class Codevs{
         // 占領されていたら敵の資源マス
         if(isOccupied(y,x)){
           enemyResourceNodeList.insert(y*WIDTH+x);
-        }else{
-          enemyResourceNodeList.erase(y*WIDTH+x);
         }
 
         it++;
@@ -894,7 +889,6 @@ class Codevs{
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
 
-        assert(y >= 0 && x >= 0 && y < HEIGHT && x < WIDTH);
         dist = calcManhattanDist(ypos, xpos, y, x);
 
         if(minDist > dist){
@@ -1398,22 +1392,46 @@ class Codevs{
      * ユニットのモードの状態の更新を行う
      */
     void updateUnitMode(){
-      int aroundMyCastelUnitCount = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 1).totalCount;
-      set<int>::iterator it = myActiveUnitList.begin();
+      int aroundMyCastelUnitCount   = aroundMyUnitCount(myCastelCoordY, myCastelCoordX, 1).totalCount;
+      int aroundMyCastelEnemyCount  = aroundEnemyUnitCount(myCastelCoordY, myCastelCoordX, 10).totalCount;
+      set<int>::iterator id = myActiveUnitList.begin();
 
-      while(it != myActiveUnitList.end()){
-        assert(*it >= 0);
-        Unit *unit = getUnit(*it);
+      while(id != myActiveUnitList.end()){
+        assert(*id >= 0 && *id <= 20000);
+        Unit *unit = getUnit(*id);
         unit->mode = directUnitMode(unit);
 
-        if(unit->role == GUARDIAN && aroundMyCastelUnitCount >= 40 && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
-          unit->role = LEADER;
-          unit->troopsLimit = 1;
-          unit->troopsCount = 1;
-          unit->mode = DESTROY;
+        if(unit->role == GUARDIAN && aroundMyCastelUnitCount - aroundMyCastelEnemyCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+          createNewPlatoon(unit, RESOURCE_BREAK);
         }
 
-        it++;
+        id++;
+      }
+    }
+
+    /*
+     * 新しい小隊を作成する(そのユニットと同じマスにいる戦闘員全てを部下にする)
+     */
+    void createNewPlatoon(Unit *leader, int mode){
+      leader->role = LEADER;
+      leader->mode = mode;
+      leader->troopsLimit = 1;
+      leader->troopsCount = 1;
+
+      set<int>::iterator id = myActiveUnitList.begin();
+
+      while(id != myActiveUnitList.end()){
+        assert(*id >= 0 && *id <= 20000);
+        Unit *unit = getUnit(*id);
+
+        if(leader->id != unit->id && isBattleUnit(unit) && leader->y == unit->y && leader->x == unit->x){
+          unit->role = COMBATANT;
+          unit->leaderId = leader->id;
+          leader->troopsCount += 1;
+          leader->troopsLimit += 1;
+        }
+
+        id++;
       }
     }
 
@@ -1439,15 +1457,9 @@ class Codevs{
           assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
         }else if(unit->mode == RESOURCE_BREAK){
           updateVillageBreakerDestination(unit);
-        }
-
-        if(unit->mode == SEARCH){
-          assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-        }
-        if(unit->role == LEADER){
+        }else if(unit->role == LEADER){
           updateSeacherDestination(unit);
-        }
-        if(unit->mode == SPY){
+        }else if(unit->mode == SPY){
           unit->destY = 99;
           unit->destX = 99;
         }
@@ -1492,6 +1504,7 @@ class Codevs{
           breaker->destX = coord.x;
         }
       }else{
+        assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
         breaker->destY = gameStage.targetY;
         breaker->destX = gameStage.targetX;
       }
@@ -1503,6 +1516,7 @@ class Codevs{
     int directUnitMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
       int castelDist = calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX);
+
       if(unit->role == LEADER){
         updateTroopsLimit(unit);
       }
@@ -1538,13 +1552,16 @@ class Codevs{
                   node->troopsId = UNDEFINED;
                 }
 
-                return DESTROY;
+                if(unit->mode == RESOURCE_BREAK){
+                  return RESOURCE_BREAK;
+                }else{
+                  return DESTROY;
+                }
               }else if(unit->mode == STAY && unit->troopsCount < unit->troopsLimit){
                 return STAY;
               }else{
                 return DESTROY;
               }
-              break;
             case COMBATANT:
               if(unitList[unit->leaderId].mode == DESTROY){
                 return DESTROY;
@@ -1555,7 +1572,6 @@ class Codevs{
               }
             default:
               return SEARCH;
-              break;
           }
           break;
         case FIGHTER:
@@ -1567,7 +1583,11 @@ class Codevs{
                   node->troopsId = UNDEFINED;
                 }
 
-                return DESTROY;
+                if(unit->mode == RESOURCE_BREAK){
+                  return RESOURCE_BREAK;
+                }else{
+                  return DESTROY;
+                }
               }else if(unit->mode == STAY && unit->troopsCount < unit->troopsLimit){
                 return STAY;
               }else{
@@ -1588,14 +1608,17 @@ class Codevs{
         case ASSASIN:
           switch(unit->role){
             case LEADER:
-              if(unit->troopsCount >= unit->troopsLimit || gameStage.incomeResource <= 15){
-              //if(unit->troopsCount >= unit->troopsLimit || gameStage.gameSituation == DANGER){
+              if(unit->troopsCount >= unit->troopsLimit){
                 if(unit->townId != NULL){
                   unit->townId = NULL;
                   node->troopsId = UNDEFINED;
                 }
 
-                return DESTROY;
+                if(unit->mode == RESOURCE_BREAK){
+                  return RESOURCE_BREAK;
+                }else{
+                  return DESTROY;
+                }
               }else if(unit->mode == STAY && unit->troopsCount < unit->troopsLimit){
                 return STAY;
               }else{
@@ -1664,7 +1687,6 @@ class Codevs{
       while(id != myActiveUnitList.end()){
         assert(*id >= 0 && *id <= 20000);
         Unit *other = getUnit(*id);
-        assert(y >= 0 && x >= 0 && other->y >= 0 && other->x >= 0);
         int dist = calcManhattanDist(y, x, other->y, other->x);
 
         if(dist <= 1 && other->role == LEADER){
@@ -1754,14 +1776,14 @@ class Codevs{
       if(unit->mode == SPY) return false;
 
       while(it != resourceNodeList.end()){
+        assert(*it >= 0 && *it < 10000);
         int y = (*it)/WIDTH;
         int x = (*it)%WIDTH;
-        assert(unit->y >= 0 && unit->x >= 0 && y >= 0 && x >= 0);
         int dist = calcManhattanDist(unit->y, unit->x, y, x);
         int rightBottomDist = calcManhattanDist(unit->y, unit->x, 99, 99);
         Node *node = getNode(y,x);
 
-        if(!node->rockon && dist <= 10 && checkMinDist(y, x, dist) && !isDie(unit, y, x) && rightBottomDist >= 100){
+        if(!node->rockon && checkMinDist(y, x, dist) && !isDie(unit, y, x) && rightBottomDist >= 100){
           node->rockon = true;
           unit->resourceY = y;
           unit->resourceX = x;
@@ -1781,21 +1803,19 @@ class Codevs{
      * minDist: 現在の最短(調べたいノードとユニットの現在の距離)
      */
     bool checkMinDist(int y, int x, int minDist){
-      set<int>::iterator it = myActiveUnitList.begin();
+      set<int>::iterator id = myActiveUnitList.begin();
 
-      while(it != myActiveUnitList.end()){
-        Unit *unit = &unitList[(*it)];
+      while(id != myActiveUnitList.end()){
+        Unit *unit = getUnit(*id);
 
         if(unit->movable && unit->mode == SEARCH){
-          assert(unit->y >= 0 && unit->x >= 0 && y >= 0 && x >= 0);
           int dist = calcManhattanDist(unit->y, unit->x, y, x);
 
           // 他に最短距離なユニットがいる場合はfalseを返す
           if(minDist > dist) return false;
-          //if(minDist > dist && unit->resourceY == UNDEFINED && unit->resourceX == UNDEFINED) return false;
         }
 
-        it++;
+        id++;
       }
 
       return true;
@@ -1804,7 +1824,7 @@ class Codevs{
     /*
      * 自軍の生存確認
      * ユニットのtimestampが更新されていない場合は前のターンで敵に倒されたので、
-     * リストから排除する。
+     * リストから排除する。timestampが更新されている場合は、見えてるノードのtimestampを更新する
      */
     void myUnitSurvivalCheck(){
       set<int> tempList = myActiveUnitList;
@@ -1831,7 +1851,7 @@ class Codevs{
       set<int>::iterator it = tempList.begin();
 
       while(it != tempList.end()){
-        Unit *enemy = &unitList[*it];
+        Unit *enemy = getUnit(*it);
         Node *node = getNode(enemy->y, enemy->x);
 
         if(enemy->timestamp != turn && node->timestamp == turn){
@@ -1949,51 +1969,53 @@ class Codevs{
           }
           break;
         case KNIGHT:
-          if(unit->role == LEADER){
-            return calcLeaderEvaluation(unit, operation);
-          }else if(unit->role == GUARDIAN){
-            return calcGuardianEvaluation(unit, operation);
-          }else if(unit->mode == SEARCH){
-            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-            return calcSeacherEvaluation(unit, operation);
-          }else if(unit->role == COMBATANT){
-            return calcCombatEvaluation(unit, operation);
-          }else{
-            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-            return calcSeacherEvaluation(unit, operation);
+          switch(unit->role){
+            case LEADER:
+              if(unit->mode == RESOURCE_BREAK){
+                return calcVillageBreakerEvaluation(unit, operation);
+              }else{
+                return calcLeaderEvaluation(unit, operation);
+              }
+            case GUARDIAN:
+              return calcGuardianEvaluation(unit, operation);
+            case COMBATANT:
+              return calcCombatEvaluation(unit, operation);
+            default:
+              assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
+              return calcSeacherEvaluation(unit, operation);
           }
-          break;
         case FIGHTER:
-          if(unit->role == LEADER){
-            return calcLeaderEvaluation(unit, operation);
-          }else if(unit->role == GUARDIAN){
-            return calcGuardianEvaluation(unit, operation);
-          }else if(unit->role == COMBATANT){
-            return calcCombatEvaluation(unit, operation);
-          }else if(unit->mode == RESOURCE_BREAK){
-            return calcVillageBreakerEvaluation(unit, operation);
-          }else{
-            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-            return calcSeacherEvaluation(unit, operation);
+          switch(unit->role){
+            case LEADER:
+              if(unit->mode == RESOURCE_BREAK){
+                return calcVillageBreakerEvaluation(unit, operation);
+              }else{
+                return calcLeaderEvaluation(unit, operation);
+              }
+            case GUARDIAN:
+              return calcGuardianEvaluation(unit, operation);
+            case COMBATANT:
+              return calcCombatEvaluation(unit, operation);
+            default:
+              assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
+              return calcSeacherEvaluation(unit, operation);
           }
-          break;
         case ASSASIN:
-          if(unit->role == LEADER){
-            return calcLeaderEvaluation(unit, operation);
-          }else if(unit->role == GUARDIAN){
-            return calcGuardianEvaluation(unit, operation);
-          }else if(unit->role == COMBATANT){
-            return calcCombatEvaluation(unit, operation);
-          }else if(unit->mode == RESOURCE_BREAK){
-            return calcVillageBreakerEvaluation(unit, operation);
-          }else if(unit->mode == SEARCH){
-            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-            return calcSeacherEvaluation(unit, operation);
-          }else{
-            assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
-            return calcSeacherEvaluation(unit, operation);
+          switch(unit->role){
+            case LEADER:
+              if(unit->mode == RESOURCE_BREAK){
+                return calcVillageBreakerEvaluation(unit, operation);
+              }else{
+                return calcLeaderEvaluation(unit, operation);
+              }
+            case GUARDIAN:
+              return calcGuardianEvaluation(unit, operation);
+            case COMBATANT:
+              return calcCombatEvaluation(unit, operation);
+            default:
+              assert(unit->destY >= 0 && unit->destX >= 0 && unit->destY < HEIGHT && unit->destX < WIDTH);
+              return calcSeacherEvaluation(unit, operation);
           }
-          break;
         default:
           break;
       }
@@ -2002,21 +2024,25 @@ class Codevs{
     }
 
     /*
+     * 戦闘要員かどうかを判定
+     */
+    bool isBattleUnit(Unit *unit){
+      return (unit->type == ASSASIN || unit->type == FIGHTER || unit->type == KNIGHT);
+    }
+
+    /*
      * 拠点を作成するかどうかの判定
      */
     bool canBuildBase(Unit* unit){
-      int rightDownDist = calcManhattanDist(unit->y, unit->x, 99, 99);
-      int wallDist = calcNearWallDistance(unit->y, unit->x);
-
-      if(gameStage.gameSituation == DANGER) return false;
-      if(gameStage.gameSituation != DANGER && gameStage.baseCount != 0) return false;
-
-      if(!isSafePoint(unit->y, unit->x, 2)) return false;
-      if(rightDownDist > 60 && myResourceCount <= 1800) return false;
+      if(!isEnemyCastelDetected()){
+        return false;
+      }else if(isEnemyDefended()){
+        return false;
+      }
 
       if(isEnemyCastelDetected()){
         int enemyCastelDist = calcManhattanDist(unit->y, unit->x, enemyCastelCoordY, enemyCastelCoordX);
-        if(enemyCastelDist <= 11) return false;
+        if(enemyCastelDist > 20) return false;
       }
 
       return true;
@@ -2077,10 +2103,10 @@ class Codevs{
         }
       }
 
-      int maxUnitCount = max(max(knightCount/4, fighterCount), assasinCount);
+      int maxUnitCount = max(max(knightCount/3, fighterCount), assasinCount);
 
       if(maxUnitCount == assasinCount){
-        return CREATE_ASSASIN;
+        return CREATE_KNIGHT;
       }else if(maxUnitCount == fighterCount){
         return CREATE_ASSASIN;
       }else{
@@ -2103,11 +2129,11 @@ class Codevs{
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
           return myResourceCount - 10000;
-        }else if(turn <= 60){
+        }else if(turn <= 100){
           if(gameStage.openedNodeCount == 0){
             return 100 * myResourceCount - 20 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }else{
-            return 100 * myResourceCount + 2 * gameStage.openedNodeCount - 10 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
+            return 100 * myResourceCount + 3 * gameStage.openedNodeCount - 8 * destDist - 3 * stamp - node->cost + 10 * aroundMyUnitDist(unit);
           }
         }else{
           if(unit->type != WORKER){
@@ -2157,7 +2183,7 @@ class Codevs{
     int calcKingEvaluation(Unit *king, int operation){
       Node *node = getNode(myCastelCoordY, myCastelCoordX);
 
-      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && gameStage.gameSituation == DANGER){
+      if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 1 && myResourceCount > 600){
         return 100;
       }else if(operation == CREATE_BASE && node->myUnitCount[BASE] <= 2 && myResourceCount >= 800 && gameStage.gameSituation == DANGER){
         return 100;
@@ -2301,7 +2327,7 @@ class Codevs{
       if(isEnemyCastelDetected()){
         if(operation == CREATE_ASSASIN){
           return 100;
-        }else if(operation == bestUnit && currentStageNumber <= 50){
+        }else if(operation == bestUnit){
           return 110;
         }else if(operation == CREATE_FIGHTER && myUnitCount.assasinCount >= 30){
           return 90;
@@ -2334,7 +2360,7 @@ class Codevs{
       int bestUnit = checkAdvantageousUnit(ghq->y, ghq->x);
       Node *node = getNode(ghq->y, ghq->x);
 
-      if(gameStage.gameSituation == DANGER && (myUnitCount < enemyUnitCount+50 || myResourceCount >= 1000) && operation == bestUnit){
+      if((myUnitCount < enemyUnitCount+50) && operation == bestUnit){
         return 100;
       }else if(node->myUnitCount[BASE] == 2 && operation == CREATE_KNIGHT && myResourceCount >= 600){
         return 50;
@@ -2396,28 +2422,14 @@ class Codevs{
      */
     int calcGuardianEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      Node *castel = getNode(myCastelCoordY, myCastelCoordX);
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
-      int penalty = (castel->myUnitTotalCount > 10)? MIN_VALUE : MAX_VALUE;
-      int limit = 10;
+      int penalty = (node->myUnitTotalCount > 10)? MIN_VALUE : MAX_VALUE;
 
-      if(castel->myUnitCount[unit->type] <= limit){
-        return -100 * calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX) + penalty;
+      if(countBattleUnit(myCastelCoordY, myCastelCoordX) <= 10){
+        return -10 * abs(calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX));
       }else{
-        return -100 * abs(1-calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX)) - 10 * node->myUnitCount[unit->type] + penalty;
+        return -50 * abs(1-calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX)) + penalty;
       }
-
-      /*
-      if(node->myUnitTotalCount > 10){
-        return MIN_VALUE;
-      }else if(castelDist > 10 || unit->mode == DESTROY){
-        return (10000 - destDist);
-      }else if(node->myUnitTotalCount > 10){
-        return 100000 - castelDist;
-      }else{
-        return node->attackDamage[unit->type] - node->receiveDamage[unit->type]/10 - castelDist;
-      }
-      */
     }
 
     /*
@@ -2425,7 +2437,7 @@ class Codevs{
      */
     int calcLeaderEvaluation(Unit *unit, int operation){
       Node *node = getNode(unit->y, unit->x);
-      int stamp = gameStage.field[unit->y][unit->x].stamp;
+      int stamp = node->stamp;
       assert(gameStage.targetY >= 0 && gameStage.targetX >= 0 && gameStage.targetY < HEIGHT && gameStage.targetX < WIDTH);
       int targetDist = calcManhattanDist(unit->y, unit->x, gameStage.targetY, gameStage.targetX);
 
@@ -3070,6 +3082,15 @@ class Codevs{
       }
 
       return unitCount;
+    }
+
+    /*
+     * 指定したマスの戦闘要員の数を調べる
+     */
+    int countBattleUnit(int ypos, int xpos){
+      UnitCount unitCount = aroundMyUnitCount(ypos, xpos, 0);
+    
+      return unitCount.assasinCount + unitCount.fighterCount + unitCount.knightCount;
     }
 
     /*
@@ -3800,11 +3821,10 @@ class Codevs{
     }
 
     /*
-     * 1P側のプレイヤかどうかの確認
+     * 1P側のプレイヤかどうかの確認(城のIDで確認)
      */
     bool isFirstPlayer(int unitId){
       return (unitId == 0);
-      //return (calcManhattanDist(0, 0, myCastelCoordY, myCastelCoordX) <= 40);
     }
 
     /*
