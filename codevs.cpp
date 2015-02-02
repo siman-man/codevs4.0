@@ -110,7 +110,7 @@ int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 int reverseCoordTable[WIDTH];     // 座標系を逆にするためのテーブル
 
 // プレイヤーの名前
-const string PLAYER_NAME = "敵の城に突撃したAI";
+const string PLAYER_NAME = "siman";
 
 // ダメージテーブル [攻撃する側][攻撃される側]
 const int DAMAGE_TABLE[7][7] = {
