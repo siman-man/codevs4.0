@@ -596,6 +596,8 @@ class Codevs{
       unit.destX              = UNDEFINED;
       unit.resourceY          = UNDEFINED;
       unit.resourceX          = UNDEFINED;
+      unit.beforeY            = UNDEFINED;
+      unit.beforeX            = UNDEFINED;
       unit.createWorkerCount  = 0;
       unit.createKnightCount  = 0;
       unit.castelAttackCount  = 0;
@@ -1037,9 +1039,16 @@ class Codevs{
       // 城が見つかっている場合
       if(isEnemyCastelDetected()){
         Node *node = getNode(enemyCastelCoordY, enemyCastelCoordX);
+        int aroundEnemyCount = aroundEnemyUnitCount(unit->y, unit->x, 8).totalCount;
 
         if(isEnemyCastelSpy() && node->enemyUnitCount[BASE] <= 0){
           unit->troopsLimit = min(unit->troopsLimit, 20);
+        }
+        if(aroundEnemyCount >= 5){
+          unit->troopsLimit = min(unit->troopsLimit, 70);
+        }
+        if(aroundEnemyCount >= 10){
+          unit->troopsLimit = min(unit->troopsLimit, 50);
         }
       }
     }
@@ -1052,7 +1061,9 @@ class Codevs{
      */
     int directFirstMode(Unit *unit){
       Node *node = getNode(unit->y, unit->x);
-      updateTroopsLimit(unit);
+      if(unit->role == LEADER){
+        updateTroopsLimit(unit);
+      }
 
       switch(unit->type){
         case WORKER:
@@ -1478,9 +1489,9 @@ class Codevs{
         assert(*id >= 0 && *id <= 20000);
         Unit *unit = getUnit(*id);
         unit->mode = directUnitMode(unit);
-        int battleUnitCount = countBattleUnit(unit->y, unit->x, 1);
+        int battleUnitCount = countBattleUnit(unit->y, unit->x, 2);
 
-        if(unit->role == GUARDIAN && gameStage.gameSituation != DANGER && battleUnitCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
+        if(unit->role == GUARDIAN && gameStage.gameSituation != DANGER && (gameStage.incomeResource >= 30 || battleUnitCount >= 100) && battleUnitCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
         //if(unit->role == GUARDIAN && aroundMyCastelUnitCount - aroundMyCastelEnemyCount >= SAFETY_LINE && unit->y == myCastelCoordY && unit->x == myCastelCoordX){
           createNewPlatoon(unit, DESTROY);
           //createNewPlatoon(unit, RESOURCE_BREAK);
@@ -1868,7 +1879,7 @@ class Codevs{
           unit->troopsCount = 1;
 
           if(attackCount == 0){
-            unit->troopsLimit = 90;
+            unit->troopsLimit = 120;
           }else{
             unit->troopsLimit = 1;
           }
@@ -1912,7 +1923,11 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      return 10000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x) - unit->birthday;
+      if(unit->role == COMBATANT){
+        return 10000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x) - unit->birthday;
+      }else{
+        return 10000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
+      }
     }
 
     /*
@@ -2190,7 +2205,7 @@ class Codevs{
 
       Node *node = getNode(unit->y, unit->x);
 
-      //if(node->locked) return false;
+      if(node->locked) return false;
       if(gameStage.baseCount > 0) return false;
 
       if(isEnemyCastelDetected()){
@@ -2501,8 +2516,9 @@ class Codevs{
      * 拠点の評価値
      */
     int calcBaseEvaluation(Unit *base, int operation){
-      if(myResourceCount <= 100 && operation != NO_MOVE && !isEnemyCastelDetected()) return -100;
-      if(myResourceCount <= 100 && operation != NO_MOVE && isEnemyCastelDetected() && !isEnemyCastelSpy()) return -100;
+      if(myResourceCount <= 100 && operation != NO_MOVE && !isEnemyCastelDetected()) return MIN_VALUE;
+      if(myResourceCount <= 100 && operation != NO_MOVE && isEnemyCastelDetected() && !isEnemyCastelSpy()) return MIN_VALUE;
+      if(gameStage.gameSituation == DANGER && (operation != CREATE_KNIGHT || operation != NO_MOVE)) return MIN_VALUE;
       UnitCount myUnitCount = aroundMyUnitCount(base->y, base->x, 10);
       int bestUnit = (isEnemyCastelSpy())? checkAdvantageousUnit(enemyCastelCoordY, enemyCastelCoordX) : checkAdvantageousUnit(base->y, base->x);
 
@@ -2622,6 +2638,12 @@ class Codevs{
       if(countBattleUnit(unit->y, unit->x) <= 10){
         return 100;
         //return -10 * abs(calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX));
+      }else if(countBattleUnit(myCastelCoordY, myCastelCoordX, 1) > 50){
+        int diffY   = abs(unit->y - myCastelCoordY);
+        int diffX   = abs(unit->x - myCastelCoordX);
+        int diffAll = abs(diffY - diffX);
+
+        return -100 * abs(2-calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX)) - 10 * node->myUnitCount[unit->type] - diffAll;
       }else if(node->myUnitTotalCount < 10){
         return -2 * abs(1-calcManhattanDist(unit->y, unit->x, myCastelCoordY, myCastelCoordX));
       }else{
@@ -2694,22 +2716,29 @@ class Codevs{
       assert(unit->leaderId >= 0 && unit->leaderId <= 20000);
       Unit *leader = getUnit(unit->leaderId);
       Node *node = getNode(unit->y, unit->x);
-      int limit = (leader->y == enemyCastelCoordY && leader->x == enemyCastelCoordX)? 10 : 10;
+      int limit = 10;
       int leaderDist = calcManhattanDist(unit->y, unit->x, leader->y, leader->x);
       int penalty = (node->myUnitTotalCount > 10)? MIN_VALUE : MAX_VALUE;
       int value = (leader->currentOperation == operation)? 100 : 0;
+      int beforeDist = (unit->beforeY != UNDEFINED && unit->beforeX != UNDEFINED)? calcManhattanDist(unit->beforeY, unit->beforeX, leader->y, leader->x) : MAX_VALUE;
 
       switch(unit->mode){
         case STAY:
           assert(!isWall(leader->y, leader->x));
-          if(gameStage.field[leader->y][leader->x].myUnitCount[unit->type] <= limit){
+          if(gameStage.field[leader->y][leader->x].myUnitTotalCount <= limit && unit->y == leader->y && unit->x == leader->x){
             return -100 * calcManhattanDist(unit->y, unit->x, leader->y, leader->x) + penalty;
-          }else if(countBattleUnit(leader->y, leader->x, 1) > 50){
+          }else if(countBattleUnit(leader->y, leader->x, 2) > 50 || countBattleUnit(leader->y, leader->x, 0) > 10){
             int diffY   = abs(unit->y - leader->y);
             int diffX   = abs(unit->x - leader->x);
             int diffAll = abs(diffY - diffX);
 
-            return -100 * abs(2-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] - diffAll;
+            if(beforeDist == 1){
+              return 50 - 100 * abs(2-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] - diffAll;
+            }else if(beforeDist == 2){
+              return -100 * abs(2-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] - diffAll;
+            }else{
+              return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] + penalty;
+            }
           }else{
             return -100 * abs(1-calcManhattanDist(unit->y, unit->x, leader->y, leader->x)) - 10 * node->myUnitCount[unit->type] + penalty;
           }
