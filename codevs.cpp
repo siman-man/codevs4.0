@@ -110,7 +110,7 @@ int manhattanDist[WIDTH*WIDTH];   // マンハッタン距離の出力
 int reverseCoordTable[WIDTH];     // 座標系を逆にするためのテーブル
 
 // プレイヤーの名前
-const string PLAYER_NAME = "siman";
+const string PLAYER_NAME = "敵の城に突撃したAI";
 
 // ダメージテーブル [攻撃する側][攻撃される側]
 const int DAMAGE_TABLE[7][7] = {
@@ -280,7 +280,7 @@ struct GameStage{
   int currentEnemyUnitCount[UNIT_MAX];  // 敵の全体の数
   Node field[HEIGHT][WIDTH];            // ゲームフィールド
   queue<int> enemyCastelPointList;      // 敵の城の座標候補
-  set<int> enemyVillageList;            // 敵の村のリスト
+  set<int> enemyVillageAndCastelList;   // 敵の村と城のリスト(視界の大きさが10)
 };
 
 // 座標を表す
@@ -397,6 +397,9 @@ class Codevs{
 
       // 敵ユニットリストの初期化
       enemyActiveUnitList.clear();
+
+      // 敵の村のリスト
+      gameStage.enemyVillageAndCastelList.clear();
 
       // 行動の優先順位を初期化
       movePriority[WORKER] = 5;
@@ -836,6 +839,9 @@ class Codevs{
         queue<int> que;
         gameStage.enemyCastelPointList = que;
       }
+      if(unitType == VILLAGE || unitType == CASTEL){
+        gameStage.enemyVillageAndCastelList.insert(y*WIDTH+x);
+      }
 
       gameStage.currentEnemyUnitCount[unitType] += 1;
       node->enemyUnitCount[unitType] += 1;
@@ -844,6 +850,7 @@ class Codevs{
       unitList[unitId] = unit;
       enemyActiveUnitList.insert(unitId);
       unitIdCheckList[unitId] = true;
+      checkLockMark(y, x, unit.eyeRange+2);
     }
 
     /*
@@ -1455,6 +1462,8 @@ class Codevs{
       node->enemyUnits.insert(unitId);
       node->enemyUnitTotalCount += 1;
       node->enemyUnitCount[unit->type] += 1;
+
+      checkLockMark(y, x, unit->eyeRange+2);
     }
 
     /*
@@ -1802,6 +1811,22 @@ class Codevs{
     }
 
     /*
+     *
+     */
+    void updateEnemyLockedPoint(){
+      set<int>::iterator id = gameStage.enemyVillageAndCastelList.begin();
+
+      while(id != gameStage.enemyVillageAndCastelList.end()){
+        assert(*id >= 0 && *id <= 20000);
+        Unit *unit = getUnit(*id);
+
+        checkLockMark(unit->y, unit->x, 12);
+
+        id++;
+      }
+    }
+
+    /*
      * 周りにリーダが居ないか調べる
      */
     bool existLeader(int y, int x){
@@ -1887,8 +1912,7 @@ class Codevs{
      * 行動の優先順位を決める
      */
     int directUnitMovePriority(Unit *unit){
-      assert(unit->y >= 0 && unit->x >= 0);
-      return 1000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x);
+      return 10000 * movePriority[unit->role] - calcManhattanDist(unit->y, unit->x, 90, 90) - calcNearWallDistance(unit->y, unit->x) - unit->birthday;
     }
 
     /*
@@ -2160,10 +2184,13 @@ class Codevs{
      * 拠点を作成するかどうかの判定
      */
     bool canBuildBase(Unit* unit){
-      if(!isEnemyCastelDetected()){
+      if(!isEnemyCastelDetected() && myResourceCount <= 2000){
         return false;
       }
 
+      Node *node = getNode(unit->y, unit->x);
+
+      //if(node->locked) return false;
       if(gameStage.baseCount > 0) return false;
 
       if(isEnemyCastelDetected()){
@@ -2278,7 +2305,9 @@ class Codevs{
       Node *node = getNode(unit->y, unit->x);
       int stamp = node->stamp;
       
-      if(operation == NO_MOVE){
+      if(operation == CREATE_BASE && canBuildBase(unit)){
+        return 10000000;
+      }else if(operation == NO_MOVE){
         return MIN_VALUE;
       }else{
         if(hitPointY == UNDEFINED && isDie(unit, unit->y, unit->x)){
@@ -2365,20 +2394,20 @@ class Codevs{
         return MIN_VALUE;
       }else if(operation == CREATE_VILLAGE || operation == CREATE_BASE){
         return MIN_VALUE;
-      }else if(unit->y == unit->beforeY && unit->x == unit->beforeX){
+      }else if(unit->y == unit->beforeY && unit->x == unit->beforeX && !isEnemyCastelDetected()){
         return MIN_VALUE;
       }else{
         if(myCastelCoordY < myCastelCoordX){
           if(unit->id == 1 || unit->id == 7){
-            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x] - 4 * node->locked;
           }else{
-            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x] - 4 * node->locked;
           }
         }else{
           if(unit->id == 1 || unit->id == 7){
-            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
+            return -2 * dist - leftDownDist - 2 * dangerPointList[unit->type][unit->y][unit->x] - 4 * node->locked;
           }else{
-            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x];
+            return -2 * dist - rightUpDist - 2 * dangerPointList[unit->type][unit->y][unit->x] - 4 * node->locked;
           }
         }
       }
@@ -3298,10 +3327,39 @@ class Codevs{
     }
 
     /*
+     * 相手の視界をつける
+     *  - 戦闘ユニットはなるべく相手視界に入らないほうが望ましい(メタが張られるから)
+     */
+    void checkLockMark(int ypos, int xpos, int range){
+      assert(!isWall(ypos, xpos));
+      map<int, bool> checkList;
+      queue<cell> que;
+      que.push(cell(Coord(ypos, xpos), 0));
+
+      while(!que.empty()){
+        cell c = que.front(); que.pop(); 
+        Coord coord = c.first;
+        int dist = c.second;
+
+        if(checkList[coord.y*WIDTH+coord.x] || dist > range) continue;
+        checkList[coord.y*WIDTH+coord.x] = true;
+
+        Node *node = getNode(coord.y, coord.x);
+        node->locked = true;
+
+        for(int i = 1; i < 5; i++){
+          int ny = coord.y + dy[i];
+          int nx = coord.x + dx[i];
+          if(!isWall(ny,nx)) que.push(cell(Coord(ny, nx), dist+1));
+        }
+      }
+    }
+
+    /*
      * マークを付ける
      */
     void checkMark(int ypos, int xpos){
-      assert(ypos >= 0 && xpos >= 0 && ypos < WIDTH && xpos < HEIGHT);
+      assert(!isWall(ypos, xpos));
       int cost = 4;
       map<int, bool> checkList;
       queue<cell> que;
@@ -3403,6 +3461,7 @@ class Codevs{
           node->enemyUnitTotalCount = 0;
           node->enemyUnits.clear();
           node->opened = false;
+          node->locked = false;
           node->myK = 0;
           node->enemyK = 0;
 
@@ -3467,6 +3526,9 @@ class Codevs{
 
         // 試合状況更新
         updateGameSituation();
+
+        // 敵の視界を更新
+        updateEnemyLockedPoint();
 
         // 自軍の各ユニットのモード変更を行う
         updateUnitMode();
@@ -4002,7 +4064,7 @@ class Codevs{
      * 敵の城が監視できているかどうか
      */
     bool isEnemyCastelSpy(){
-      assert(isEnemyCastelDetected());
+      if(!isEnemyCastelDetected()) return false;
       set<int>::iterator id = myActiveUnitList.begin();
       assert(isEnemyCastelDetected());
 
